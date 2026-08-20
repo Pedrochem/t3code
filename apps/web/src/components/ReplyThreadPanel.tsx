@@ -62,7 +62,6 @@ import { primaryServerKeybindingsAtom } from "~/state/server";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 
-import ChatMarkdown from "./ChatMarkdown";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { readFileAsDataUrl } from "./ChatView.logic";
@@ -227,17 +226,6 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
   const lockedProvider =
     getProviderInstanceEntry(providerStatuses as ServerProvider[], lockedModelSelection.instanceId)
       ?.driverKind ?? null;
-
-  // Slack pins the message you replied to on top of the thread panel.
-  const anchorMessage = useMemo(() => {
-    let anchor = null;
-    for (const message of parentThread.messages) {
-      if (message.role === "assistant" && message.turnId === target.anchorTurnId) {
-        anchor = message;
-      }
-    }
-    return anchor;
-  }, [parentThread.messages, target.anchorTurnId]);
 
   const handleSend = useCallback(async () => {
     if (sendInFlightRef.current || isSendBusy) return;
@@ -496,20 +484,6 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
         <MessagesSquare className="size-3.5 shrink-0 text-muted-foreground" />
         <p className="min-w-0 flex-1 truncate text-sm font-medium">Reply thread</p>
       </div>
-
-      {anchorMessage ? (
-        <div className="shrink-0 border-b border-border/60">
-          <div className="max-h-56 overflow-y-auto px-4 py-3">
-            <ChatMarkdown
-              text={anchorMessage.text}
-              cwd={markdownCwd}
-              threadRef={parentRef}
-              isStreaming={false}
-              lineBreaks={false}
-            />
-          </div>
-        </div>
-      ) : null}
 
       <div className="min-h-0 flex-1">
         {timelineEntries.length === 0 && !isWorking ? (
