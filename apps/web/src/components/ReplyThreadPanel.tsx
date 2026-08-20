@@ -551,82 +551,89 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
         )}
       </div>
 
-      <div className="shrink-0">
+      <div className="shrink-0 px-2 pb-2">
         {sendError !== null ? (
-          <p className="px-4 pb-1 text-xs text-destructive">{sendError}</p>
+          <p className="px-2 pb-1 text-xs text-destructive">{sendError}</p>
         ) : null}
-        <ChatComposer
-          variant="reply"
-          composerDraftTarget={composerDraftTarget}
-          environmentId={environmentId}
-          routeKind="server"
-          routeThreadRef={threadRef ?? parentRef}
-          draftId={null}
-          activeThreadId={(target.threadId as ThreadId | null) ?? null}
-          activeThreadEnvironmentId={environmentId}
-          activeThread={thread ?? undefined}
-          isServerThread={threadRef !== null}
-          isLocalDraftThread={threadRef === null}
-          forceExpandedOnMobile={false}
-          projectSelectionRequired={false}
-          phase={phase}
-          isConnecting={phase === "connecting"}
-          isSendBusy={isSendBusy}
-          sendDisabledReason={null}
-          isPreparingWorktree={false}
-          externalDrawerAttached={false}
-          environmentUnavailable={null}
-          activePendingApproval={activePendingApproval}
-          pendingApprovals={pendingApprovals}
-          pendingUserInputs={pendingUserInputs}
-          activePendingProgress={activePendingProgress}
-          activePendingResolvedAnswers={activePendingResolvedAnswers}
-          activePendingIsResponding={activePendingIsResponding}
-          activePendingDraftAnswers={activePendingDraftAnswers}
-          activePendingQuestionIndex={activePendingQuestionIndex}
-          respondingRequestIds={[...respondingApprovalIds]}
-          showPlanFollowUpPrompt={false}
-          activeProposedPlan={null}
-          activeTasksProgress={null}
-          activeTaskSteps={null}
-          runtimeMode={runtimeMode}
-          interactionMode={interactionMode}
-          lockedProvider={lockedProvider}
-          providerStatuses={providerStatuses as ServerProvider[]}
-          activeProjectDefaultModelSelection={null}
-          activeThreadModelSelection={lockedModelSelection}
-          activeThreadActivities={activities}
-          resolvedTheme={resolvedTheme}
-          settings={settings}
-          keybindings={keybindings}
-          terminalOpen={false}
-          gitCwd={markdownCwd ?? null}
-          promptRef={promptRef}
-          composerImagesRef={composerImagesRef}
-          composerTerminalContextsRef={composerTerminalContextsRef}
-          composerElementContextsRef={composerElementContextsRef}
-          composerRef={composerRef}
-          onSend={(event) => {
-            event?.preventDefault();
-            void handleSend();
-          }}
-          onInterrupt={handleInterrupt}
-          onImplementPlanInNewThread={NOOP}
-          onRespondToApproval={handleRespondToApproval}
-          onSelectActivePendingUserInputOption={onSelectActivePendingUserInputOption}
-          onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
-          onPreviousActivePendingUserInputQuestion={onPreviousActivePendingUserInputQuestion}
-          onChangeActivePendingUserInputCustomAnswer={onChangeActivePendingUserInputCustomAnswer}
-          onProviderModelSelect={NOOP}
-          getModelDisabledReason={() => null}
-          toggleInteractionMode={NOOP}
-          handleRuntimeModeChange={NOOP}
-          handleInteractionModeChange={NOOP}
-          focusComposer={focusComposer}
-          scheduleComposerFocus={scheduleComposerFocus}
-          setThreadError={setThreadError}
-          onExpandImage={NOOP}
-        />
+        {/* Same visual shell that wraps the main thread's composer. */}
+        <div className="chat-composer-glass-shell relative mx-auto w-full max-w-3xl">
+          <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
+            <ChatComposer
+              variant="reply"
+              composerDraftTarget={composerDraftTarget}
+              environmentId={environmentId}
+              routeKind="server"
+              routeThreadRef={threadRef ?? parentRef}
+              draftId={null}
+              activeThreadId={(target.threadId as ThreadId | null) ?? null}
+              activeThreadEnvironmentId={environmentId}
+              activeThread={thread ?? undefined}
+              isServerThread={threadRef !== null}
+              isLocalDraftThread={threadRef === null}
+              forceExpandedOnMobile={false}
+              projectSelectionRequired={false}
+              phase={phase}
+              isConnecting={phase === "connecting"}
+              isSendBusy={isSendBusy}
+              sendDisabledReason={null}
+              isPreparingWorktree={false}
+              externalDrawerAttached={false}
+              environmentUnavailable={null}
+              activePendingApproval={activePendingApproval}
+              pendingApprovals={pendingApprovals}
+              pendingUserInputs={pendingUserInputs}
+              activePendingProgress={activePendingProgress}
+              activePendingResolvedAnswers={activePendingResolvedAnswers}
+              activePendingIsResponding={activePendingIsResponding}
+              activePendingDraftAnswers={activePendingDraftAnswers}
+              activePendingQuestionIndex={activePendingQuestionIndex}
+              respondingRequestIds={[...respondingApprovalIds]}
+              showPlanFollowUpPrompt={false}
+              activeProposedPlan={null}
+              activeTasksProgress={null}
+              activeTaskSteps={null}
+              runtimeMode={runtimeMode}
+              interactionMode={interactionMode}
+              lockedProvider={lockedProvider}
+              providerStatuses={providerStatuses as ServerProvider[]}
+              activeProjectDefaultModelSelection={null}
+              activeThreadModelSelection={lockedModelSelection}
+              activeThreadActivities={activities}
+              resolvedTheme={resolvedTheme}
+              settings={settings}
+              keybindings={keybindings}
+              terminalOpen={false}
+              gitCwd={markdownCwd ?? null}
+              promptRef={promptRef}
+              composerImagesRef={composerImagesRef}
+              composerTerminalContextsRef={composerTerminalContextsRef}
+              composerElementContextsRef={composerElementContextsRef}
+              composerRef={composerRef}
+              onSend={(event) => {
+                event?.preventDefault();
+                void handleSend();
+              }}
+              onInterrupt={handleInterrupt}
+              onImplementPlanInNewThread={NOOP}
+              onRespondToApproval={handleRespondToApproval}
+              onSelectActivePendingUserInputOption={onSelectActivePendingUserInputOption}
+              onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
+              onPreviousActivePendingUserInputQuestion={onPreviousActivePendingUserInputQuestion}
+              onChangeActivePendingUserInputCustomAnswer={
+                onChangeActivePendingUserInputCustomAnswer
+              }
+              onProviderModelSelect={NOOP}
+              getModelDisabledReason={() => null}
+              toggleInteractionMode={NOOP}
+              handleRuntimeModeChange={NOOP}
+              handleInteractionModeChange={NOOP}
+              focusComposer={focusComposer}
+              scheduleComposerFocus={scheduleComposerFocus}
+              setThreadError={setThreadError}
+              onExpandImage={NOOP}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

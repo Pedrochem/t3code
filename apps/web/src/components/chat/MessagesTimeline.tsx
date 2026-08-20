@@ -1118,13 +1118,13 @@ function ReplyInThreadButton({ turnId }: { turnId: TurnId | null }) {
             size="xs"
             variant="ghost"
             onClick={() => onOpenReplyThread(turnId)}
-            aria-label="Reply in thread"
+            aria-label="Reply in sub-thread"
           />
         }
       >
         <MessagesSquareIcon className="size-3" />
       </TooltipTrigger>
-      <TooltipPopup side="top">Reply in thread</TooltipPopup>
+      <TooltipPopup side="top">Reply in sub-thread</TooltipPopup>
     </Tooltip>
   );
 }
@@ -1145,9 +1145,7 @@ function ReplyThreadChip({ messageId }: { messageId: MessageId }) {
       >
         <MessagesSquareIcon className="size-3 shrink-0" />
         <span className="font-medium">
-          {anchor.interactionCount === 1
-            ? "1 interaction"
-            : `${anchor.interactionCount} interactions`}
+          {anchor.interactionCount === 1 ? "1 reply" : `${anchor.interactionCount} replies`}
         </span>
         <span className="tabular-nums">
           {formatDayAwareTimestamp(anchor.updatedAt, ctx.timestampFormat)}
