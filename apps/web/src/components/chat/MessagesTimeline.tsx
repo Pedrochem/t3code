@@ -157,7 +157,8 @@ interface TimelineRowSharedState {
 export interface ReplyThreadAnchorInfo {
   readonly turnId: TurnId;
   readonly threadId: string;
-  readonly messageCount: number;
+  /** User to assistant exchanges in the reply thread, Slack's reply count. */
+  readonly interactionCount: number;
   readonly updatedAt: string;
 }
 
@@ -1144,7 +1145,9 @@ function ReplyThreadChip({ messageId }: { messageId: MessageId }) {
       >
         <MessagesSquareIcon className="size-3 shrink-0" />
         <span className="font-medium">
-          {anchor.messageCount === 1 ? "1 reply" : `${anchor.messageCount} replies`}
+          {anchor.interactionCount === 1
+            ? "1 interaction"
+            : `${anchor.interactionCount} interactions`}
         </span>
         <span className="tabular-nums">
           {formatDayAwareTimestamp(anchor.updatedAt, ctx.timestampFormat)}

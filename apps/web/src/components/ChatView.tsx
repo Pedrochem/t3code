@@ -2291,7 +2291,7 @@ function ChatViewContent(props: ChatViewProps) {
       anchors.set(messageId, {
         turnId,
         threadId: child.id,
-        messageCount: child.messageCount ?? 0,
+        interactionCount: child.interactionCount ?? 0,
         updatedAt: child.updatedAt,
       });
     }

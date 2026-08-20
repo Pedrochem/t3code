@@ -2,57 +2,78 @@
  * ReplyThreadPanel — the Slack style side conversation beside a parent thread.
  *
  * Renders one reply thread (or a draft for a fresh anchor) inside the right
- * panel's singleton "reply-thread" surface. The thread is created lazily on
- * first send through the turn-start bootstrap, which forks the parent's
- * provider session at the anchor turn server side. Model and modes are locked
- * to the parent, so the composer here is deliberately minimal: text, send,
- * stop, and approval responses.
+ * panel's singleton "reply-thread" surface: the anchor turn's assistant
+ * message pinned on top, the reply conversation below, and the real
+ * ChatComposer in its "reply" variant, so typing feels identical to the main
+ * thread while the locked controls (model, modes, extras) stay hidden. The
+ * thread is created lazily on first send through the turn-start bootstrap,
+ * which forks the parent's provider session at the anchor turn server side.
  */
+import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type {
+  ApprovalRequestId,
   EnvironmentId,
   ProviderApprovalDecision,
-  ApprovalRequestId,
+  ProviderUserInputAnswers,
+  ServerProvider,
   ThreadId,
   TimestampFormat,
   TurnId,
 } from "@t3tools/contracts";
+import { applyClaudePromptEffortPrefix, resolvePromptInjectedEffort } from "@t3tools/shared/model";
 import type { LegendListRef } from "@legendapp/list/react";
-import { ArrowUp, MessagesSquare, Square } from "lucide-react";
-import {
-  memo,
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from "react";
+import { MessagesSquare } from "lucide-react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 
 import type { EnvironmentThread } from "@t3tools/client-runtime/state/models";
-import { newMessageId, newThreadId, cn } from "~/lib/utils";
+import type { ComposerImageAttachment } from "~/composerDraftStore";
+import { useComposerDraftStore } from "~/composerDraftStore";
+import { useEnvironmentSettings } from "~/hooks/useSettings";
+import type { ElementContextDraft } from "~/lib/elementContext";
+import type { TerminalContextDraft } from "~/lib/terminalContext";
+import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
+import { getProviderInstanceEntry } from "~/providerInstances";
+import { getProviderModelCapabilities } from "~/providerModels";
+import {
+  buildPendingUserInputAnswers,
+  derivePendingUserInputProgress,
+  setPendingUserInputCustomAnswer,
+  togglePendingUserInputOptionSelection,
+  type PendingUserInputDraftAnswer,
+} from "~/pendingUserInput";
 import {
   derivePendingApprovals,
+  derivePendingUserInputs,
+  derivePhase,
   deriveTimelineEntries,
   deriveTurnPlans,
   deriveWorkLogEntries,
 } from "~/session-logic";
 import {
+  useServerConfigs,
   useThread,
   useThreadActivities,
   useThreadMessages,
   useThreadProposedPlans,
 } from "~/state/entities";
+import { primaryServerKeybindingsAtom } from "~/state/server";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 
-import { ComposerPendingApprovalActions } from "./chat/ComposerPendingApprovalActions";
-import { ComposerPendingApprovalPanel } from "./chat/ComposerPendingApprovalPanel";
+import ChatMarkdown from "./ChatMarkdown";
+import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
-import { Button } from "./ui/button";
+import { readFileAsDataUrl } from "./ChatView.logic";
 
 const EMPTY_MESSAGE_ID_MAP = new Map<never, never>();
 const NOOP = () => {};
+
+// Mirrors ChatView's image-only bootstrap prompt so an attachment-only reply
+// behaves the same as one in the main composer.
+const IMAGE_ONLY_BOOTSTRAP_PROMPT =
+  "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
 
 export interface ReplyThreadPanelTarget {
   readonly anchorTurnId: string;
@@ -81,6 +102,10 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
   markdownCwd,
   workspaceRoot,
 }: ReplyThreadPanelProps) {
+  const parentRef = useMemo(
+    () => scopeThreadRef(environmentId, parentThread.id),
+    [environmentId, parentThread.id],
+  );
   const threadRef = useMemo(
     () =>
       target.threadId === null ? null : scopeThreadRef(environmentId, target.threadId as ThreadId),
@@ -91,16 +116,38 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
   const activities = useThreadActivities(threadRef);
   const proposedPlans = useThreadProposedPlans(threadRef);
 
+  const settings = useEnvironmentSettings(environmentId);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const serverConfigs = useServerConfigs();
+  const providerStatuses = useMemo(
+    () => serverConfigs.get(environmentId)?.providers ?? [],
+    [environmentId, serverConfigs],
+  );
+
   const listRef = useRef<LegendListRef | null>(null);
-  const [draftText, setDraftText] = useState("");
   const [isSendBusy, setIsSendBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  // Reply drafts before the thread exists key their composer state off a
+  // stable draft id; after creation the child thread ref takes over.
+  const [replyDraftId] = useState(() => newDraftId());
+  const composerDraftTarget = threadRef ?? replyDraftId;
 
+  const promptRef = useRef("");
+  const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
+  const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
+  const composerElementContextsRef = useRef<ElementContextDraft[]>([]);
+  const composerRef = useRef<ChatComposerHandle | null>(null);
+  const sendInFlightRef = useRef(false);
+
+  const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, {
     reportFailure: false,
   });
   const respondToApproval = useAtomCommand(threadEnvironment.respondToApproval, {
+    reportFailure: false,
+  });
+  const respondToUserInput = useAtomCommand(threadEnvironment.respondToUserInput, {
     reportFailure: false,
   });
 
@@ -112,28 +159,112 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
   );
   const pendingApprovals = useMemo(() => derivePendingApprovals(activities), [activities]);
   const activePendingApproval = pendingApprovals[0] ?? null;
+  const pendingUserInputs = useMemo(() => derivePendingUserInputs(activities), [activities]);
+  const activePendingUserInput = pendingUserInputs[0] ?? null;
   const [respondingApprovalIds, setRespondingApprovalIds] = useState<
     ReadonlyArray<ApprovalRequestId>
   >([]);
+  const [pendingUserInputAnswersByRequestId, setPendingUserInputAnswersByRequestId] = useState<
+    Record<string, Record<string, PendingUserInputDraftAnswer>>
+  >({});
+  const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
+    useState<Record<string, number>>({});
 
-  const sessionStatus = thread?.session?.status ?? null;
-  const isRunning = sessionStatus === "running" || sessionStatus === "starting";
-  const isWorking = isRunning || isSendBusy;
+  const activePendingDraftAnswers = useMemo(
+    () =>
+      activePendingUserInput
+        ? (pendingUserInputAnswersByRequestId[activePendingUserInput.requestId] ?? {})
+        : {},
+    [activePendingUserInput, pendingUserInputAnswersByRequestId],
+  );
+  const activePendingQuestionIndex = activePendingUserInput
+    ? (pendingUserInputQuestionIndexByRequestId[activePendingUserInput.requestId] ?? 0)
+    : 0;
+  const activePendingProgress = useMemo(
+    () =>
+      activePendingUserInput
+        ? derivePendingUserInputProgress(
+            activePendingUserInput.questions,
+            activePendingDraftAnswers,
+            activePendingQuestionIndex,
+          )
+        : null,
+    [activePendingDraftAnswers, activePendingQuestionIndex, activePendingUserInput],
+  );
+  const activePendingResolvedAnswers = useMemo(
+    () =>
+      activePendingUserInput
+        ? buildPendingUserInputAnswers(activePendingUserInput.questions, activePendingDraftAnswers)
+        : null,
+    [activePendingDraftAnswers, activePendingUserInput],
+  );
+  const [respondingUserInputRequestIds, setRespondingUserInputRequestIds] = useState<
+    ReadonlyArray<ApprovalRequestId>
+  >([]);
+  const activePendingIsResponding = activePendingUserInput
+    ? respondingUserInputRequestIds.includes(activePendingUserInput.requestId)
+    : false;
+
+  const phase = derivePhase(thread?.session ?? null);
+  const isRunning = phase === "running";
+  const isWorking = isRunning || phase === "connecting" || isSendBusy;
   const routeThreadKey = threadRef
     ? scopedThreadKey(threadRef)
-    : `${scopedThreadKey(scopeThreadRef(environmentId, parentThread.id))}:reply-draft`;
+    : `${scopedThreadKey(parentRef)}:reply-draft`;
+
+  // Locked to the parent: reply threads inherit model and modes
+  // (docs/internals/reply-threads.md).
+  const runtimeMode = parentThread.runtimeMode;
+  const interactionMode = parentThread.interactionMode;
+  const lockedModelSelection = thread?.modelSelection ?? parentThread.modelSelection;
+  const lockedProvider =
+    getProviderInstanceEntry(providerStatuses as ServerProvider[], lockedModelSelection.instanceId)
+      ?.driverKind ?? null;
+
+  // Slack pins the message you replied to on top of the thread panel.
+  const anchorMessage = useMemo(() => {
+    let anchor = null;
+    for (const message of parentThread.messages) {
+      if (message.role === "assistant" && message.turnId === target.anchorTurnId) {
+        anchor = message;
+      }
+    }
+    return anchor;
+  }, [parentThread.messages, target.anchorTurnId]);
 
   const handleSend = useCallback(async () => {
-    const text = draftText.trim();
-    if (text.length === 0 || isSendBusy) return;
+    if (sendInFlightRef.current || isSendBusy) return;
+    const sendCtx = composerRef.current?.getSendContext();
+    if (!sendCtx?.providerAvailable) return;
+    const prompt = sendCtx.prompt.trim();
+    if (prompt.length === 0 && sendCtx.images.length === 0) return;
+
+    const caps = getProviderModelCapabilities(
+      sendCtx.selectedProviderModels,
+      sendCtx.selectedModel,
+      sendCtx.selectedProvider,
+    );
+    const outgoingText = applyClaudePromptEffortPrefix(
+      prompt || IMAGE_ONLY_BOOTSTRAP_PROMPT,
+      resolvePromptInjectedEffort(caps, sendCtx.selectedPromptEffort),
+    );
+    if (composerRef.current?.validateProviderInput(outgoingText) === false) {
+      return;
+    }
+
     setSendError(null);
+    sendInFlightRef.current = true;
     setIsSendBusy(true);
     const createdAt = new Date().toISOString();
-    // Locked to the parent: the reply thread inherits model and modes and the
-    // composer offers no way to change them (docs/internals/reply-threads.md).
-    const runtimeMode = parentThread.runtimeMode;
-    const interactionMode = parentThread.interactionMode;
-    const modelSelection = thread?.modelSelection ?? parentThread.modelSelection;
+    const attachments = await Promise.all(
+      sendCtx.images.map(async (image) => ({
+        type: "image" as const,
+        name: image.name,
+        mimeType: image.mimeType,
+        sizeBytes: image.sizeBytes,
+        dataUrl: await readFileAsDataUrl(image.file),
+      })),
+    );
     const targetThreadId = (target.threadId as ThreadId | null) ?? newThreadId();
     const result = await startThreadTurn({
       environmentId,
@@ -142,10 +273,10 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
         message: {
           messageId: newMessageId(),
           role: "user",
-          text,
-          attachments: [],
+          text: outgoingText,
+          attachments,
         },
-        modelSelection,
+        modelSelection: lockedModelSelection,
         runtimeMode,
         interactionMode,
         ...(target.threadId === null
@@ -154,7 +285,7 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
                 createThread: {
                   projectId: parentThread.projectId,
                   title: `Reply · ${parentThread.title}`.slice(0, 120),
-                  modelSelection,
+                  modelSelection: lockedModelSelection,
                   runtimeMode,
                   interactionMode,
                   branch: parentThread.branch,
@@ -169,6 +300,7 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
         createdAt,
       },
     });
+    sendInFlightRef.current = false;
     setIsSendBusy(false);
     if (result._tag === "Failure") {
       const error = squashAtomCommandFailure(result);
@@ -179,20 +311,25 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
       );
       return;
     }
-    setDraftText("");
+    promptRef.current = "";
+    clearComposerDraftContent(composerDraftTarget);
+    composerRef.current?.resetCursorState();
     if (target.threadId === null) {
       onThreadCreated(targetThreadId);
     }
   }, [
-    draftText,
+    clearComposerDraftContent,
+    composerDraftTarget,
     environmentId,
+    interactionMode,
     isSendBusy,
+    lockedModelSelection,
     onThreadCreated,
     parentThread,
+    runtimeMode,
     startThreadTurn,
     target.anchorTurnId,
     target.threadId,
-    thread?.modelSelection,
   ]);
 
   const handleInterrupt = useCallback(() => {
@@ -207,7 +344,7 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
     async (requestId: ApprovalRequestId, decision: ProviderApprovalDecision) => {
       if (target.threadId === null) return;
       setRespondingApprovalIds((existing) => [...existing, requestId]);
-      await respondToApproval({
+      const result = await respondToApproval({
         environmentId,
         input: {
           threadId: target.threadId as ThreadId,
@@ -217,19 +354,134 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
         },
       });
       setRespondingApprovalIds((existing) => existing.filter((id) => id !== requestId));
+      return result;
     },
     [environmentId, respondToApproval, target.threadId],
   );
 
-  const handleComposerKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        void handleSend();
+  const handleRespondToUserInput = useCallback(
+    async (requestId: ApprovalRequestId, answers: ProviderUserInputAnswers) => {
+      if (target.threadId === null) return;
+      setRespondingUserInputRequestIds((existing) => [...existing, requestId]);
+      await respondToUserInput({
+        environmentId,
+        input: {
+          threadId: target.threadId as ThreadId,
+          requestId,
+          answers,
+          createdAt: new Date().toISOString(),
+        },
+      });
+      setRespondingUserInputRequestIds((existing) => existing.filter((id) => id !== requestId));
+    },
+    [environmentId, respondToUserInput, target.threadId],
+  );
+
+  const setActivePendingUserInputQuestionIndex = useCallback(
+    (nextQuestionIndex: number) => {
+      if (!activePendingUserInput) return;
+      setPendingUserInputQuestionIndexByRequestId((existing) => ({
+        ...existing,
+        [activePendingUserInput.requestId]: nextQuestionIndex,
+      }));
+    },
+    [activePendingUserInput],
+  );
+
+  const onSelectActivePendingUserInputOption = useCallback(
+    (questionId: string, optionLabel: string) => {
+      if (!activePendingUserInput) return;
+      setPendingUserInputAnswersByRequestId((existing) => {
+        const question =
+          (activePendingProgress?.activeQuestion?.id === questionId
+            ? activePendingProgress.activeQuestion
+            : undefined) ??
+          activePendingUserInput.questions.find((entry) => entry.id === questionId);
+        if (!question) return existing;
+        return {
+          ...existing,
+          [activePendingUserInput.requestId]: {
+            ...existing[activePendingUserInput.requestId],
+            [questionId]: togglePendingUserInputOptionSelection(
+              question,
+              existing[activePendingUserInput.requestId]?.[questionId],
+              optionLabel,
+            ),
+          },
+        };
+      });
+      promptRef.current = "";
+      composerRef.current?.resetCursorState({ cursor: 0 });
+    },
+    [activePendingProgress?.activeQuestion, activePendingUserInput],
+  );
+
+  const onChangeActivePendingUserInputCustomAnswer = useCallback(
+    (
+      questionId: string,
+      value: string,
+      nextCursor: number,
+      expandedCursor: number,
+      _cursorAdjacentToMention: boolean,
+    ) => {
+      if (!activePendingUserInput) return;
+      promptRef.current = value;
+      setPendingUserInputAnswersByRequestId((existing) => ({
+        ...existing,
+        [activePendingUserInput.requestId]: {
+          ...existing[activePendingUserInput.requestId],
+          [questionId]: setPendingUserInputCustomAnswer(
+            existing[activePendingUserInput.requestId]?.[questionId],
+            value,
+          ),
+        },
+      }));
+      const snapshot = composerRef.current?.readSnapshot();
+      if (
+        snapshot?.value !== value ||
+        snapshot.cursor !== nextCursor ||
+        snapshot.expandedCursor !== expandedCursor
+      ) {
+        composerRef.current?.focusAt(nextCursor);
       }
     },
-    [handleSend],
+    [activePendingUserInput],
   );
+
+  const onAdvanceActivePendingUserInput = useCallback(() => {
+    if (!activePendingUserInput || !activePendingProgress) return;
+    if (activePendingProgress.isLastQuestion) {
+      if (activePendingResolvedAnswers) {
+        void handleRespondToUserInput(
+          activePendingUserInput.requestId,
+          activePendingResolvedAnswers,
+        );
+      }
+      return;
+    }
+    setActivePendingUserInputQuestionIndex(activePendingProgress.questionIndex + 1);
+  }, [
+    activePendingProgress,
+    activePendingResolvedAnswers,
+    activePendingUserInput,
+    handleRespondToUserInput,
+    setActivePendingUserInputQuestionIndex,
+  ]);
+
+  const onPreviousActivePendingUserInputQuestion = useCallback(() => {
+    if (!activePendingProgress) return;
+    setActivePendingUserInputQuestionIndex(Math.max(activePendingProgress.questionIndex - 1, 0));
+  }, [activePendingProgress, setActivePendingUserInputQuestionIndex]);
+
+  const focusComposer = useCallback(() => {
+    composerRef.current?.focusAtEnd();
+  }, []);
+  const scheduleComposerFocus = useCallback(() => {
+    requestAnimationFrame(() => composerRef.current?.focusAtEnd());
+  }, []);
+  const setThreadError = useCallback((_threadId: ThreadId | null, error: string | null) => {
+    setSendError(error);
+  }, []);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -240,6 +492,23 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
           <p className="truncate text-xs text-muted-foreground">{parentThread.title}</p>
         </div>
       </div>
+
+      {anchorMessage ? (
+        <div className="shrink-0 border-b border-border/60">
+          <div className="max-h-56 overflow-y-auto px-4 py-3">
+            <ChatMarkdown
+              text={anchorMessage.text}
+              cwd={markdownCwd}
+              threadRef={parentRef}
+              isStreaming={false}
+              lineBreaks={false}
+            />
+          </div>
+          <p className="border-t border-border/40 px-4 py-1.5 text-xs text-muted-foreground">
+            {timelineEntries.length === 0 ? "Reply below to start the thread" : "Replies"}
+          </p>
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1">
         {timelineEntries.length === 0 && !isWorking ? (
@@ -282,57 +551,82 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
         )}
       </div>
 
-      <div className="border-t border-border/60 p-2">
-        {activePendingApproval !== null && target.threadId !== null ? (
-          <div className="mb-2 rounded-lg border border-border/70 p-2">
-            <ComposerPendingApprovalPanel
-              approval={activePendingApproval}
-              pendingCount={pendingApprovals.length}
-            />
-            <ComposerPendingApprovalActions
-              requestId={activePendingApproval.requestId}
-              isResponding={respondingApprovalIds.includes(activePendingApproval.requestId)}
-              onRespondToApproval={handleRespondToApproval}
-            />
-          </div>
-        ) : null}
+      <div className="shrink-0">
         {sendError !== null ? (
-          <p className="mb-1.5 px-1 text-xs text-destructive">{sendError}</p>
+          <p className="px-4 pb-1 text-xs text-destructive">{sendError}</p>
         ) : null}
-        <div className="flex items-end gap-1.5">
-          <textarea
-            value={draftText}
-            onChange={(event) => setDraftText(event.target.value)}
-            onKeyDown={handleComposerKeyDown}
-            placeholder="Reply…"
-            rows={2}
-            className={cn(
-              "min-h-[3.25rem] w-full resize-none rounded-xl border border-border/70 bg-background px-3 py-2 text-sm",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70",
-            )}
-          />
-          {isRunning ? (
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              onClick={handleInterrupt}
-              aria-label="Stop the reply thread's turn"
-            >
-              <Square className="size-3.5" />
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              size="icon"
-              disabled={draftText.trim().length === 0 || isSendBusy}
-              onClick={() => void handleSend()}
-              aria-label="Send reply"
-            >
-              <ArrowUp className="size-4" />
-            </Button>
-          )}
-        </div>
+        <ChatComposer
+          variant="reply"
+          composerDraftTarget={composerDraftTarget}
+          environmentId={environmentId}
+          routeKind="server"
+          routeThreadRef={threadRef ?? parentRef}
+          draftId={null}
+          activeThreadId={(target.threadId as ThreadId | null) ?? null}
+          activeThreadEnvironmentId={environmentId}
+          activeThread={thread ?? undefined}
+          isServerThread={threadRef !== null}
+          isLocalDraftThread={threadRef === null}
+          forceExpandedOnMobile={false}
+          projectSelectionRequired={false}
+          phase={phase}
+          isConnecting={phase === "connecting"}
+          isSendBusy={isSendBusy}
+          sendDisabledReason={null}
+          isPreparingWorktree={false}
+          externalDrawerAttached={false}
+          environmentUnavailable={null}
+          activePendingApproval={activePendingApproval}
+          pendingApprovals={pendingApprovals}
+          pendingUserInputs={pendingUserInputs}
+          activePendingProgress={activePendingProgress}
+          activePendingResolvedAnswers={activePendingResolvedAnswers}
+          activePendingIsResponding={activePendingIsResponding}
+          activePendingDraftAnswers={activePendingDraftAnswers}
+          activePendingQuestionIndex={activePendingQuestionIndex}
+          respondingRequestIds={[...respondingApprovalIds]}
+          showPlanFollowUpPrompt={false}
+          activeProposedPlan={null}
+          activeTasksProgress={null}
+          activeTaskSteps={null}
+          runtimeMode={runtimeMode}
+          interactionMode={interactionMode}
+          lockedProvider={lockedProvider}
+          providerStatuses={providerStatuses as ServerProvider[]}
+          activeProjectDefaultModelSelection={null}
+          activeThreadModelSelection={lockedModelSelection}
+          activeThreadActivities={activities}
+          resolvedTheme={resolvedTheme}
+          settings={settings}
+          keybindings={keybindings}
+          terminalOpen={false}
+          gitCwd={markdownCwd ?? null}
+          promptRef={promptRef}
+          composerImagesRef={composerImagesRef}
+          composerTerminalContextsRef={composerTerminalContextsRef}
+          composerElementContextsRef={composerElementContextsRef}
+          composerRef={composerRef}
+          onSend={(event) => {
+            event?.preventDefault();
+            void handleSend();
+          }}
+          onInterrupt={handleInterrupt}
+          onImplementPlanInNewThread={NOOP}
+          onRespondToApproval={handleRespondToApproval}
+          onSelectActivePendingUserInputOption={onSelectActivePendingUserInputOption}
+          onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
+          onPreviousActivePendingUserInputQuestion={onPreviousActivePendingUserInputQuestion}
+          onChangeActivePendingUserInputCustomAnswer={onChangeActivePendingUserInputCustomAnswer}
+          onProviderModelSelect={NOOP}
+          getModelDisabledReason={() => null}
+          toggleInteractionMode={NOOP}
+          handleRuntimeModeChange={NOOP}
+          handleInteractionModeChange={NOOP}
+          focusComposer={focusComposer}
+          scheduleComposerFocus={scheduleComposerFocus}
+          setThreadError={setThreadError}
+          onExpandImage={NOOP}
+        />
       </div>
     </div>
   );

@@ -531,6 +531,12 @@ export interface ChatComposerProps {
   routeKind: "server" | "draft";
   routeThreadRef: ScopedThreadRef;
   draftId: DraftId | null;
+  /**
+   * "reply" is the same composer with the reply thread's locked controls
+   * hidden: no model picker, extras menu, or mode toggles. The context
+   * meter and send cluster stay (docs/internals/reply-threads.md).
+   */
+  variant?: "thread" | "reply";
 
   // Thread context
   activeThreadId: ThreadId | null;
@@ -645,6 +651,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     routeKind,
     routeThreadRef,
     draftId,
+    variant = "thread",
     activeThreadId,
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
     activeThread,
@@ -3289,7 +3296,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       <CircleAlertIcon className="size-4" />
                       No provider available
                     </Button>
-                  ) : (
+                  ) : variant === "reply" ? null : (
                     <ProviderModelPicker
                       compact={isComposerFooterCompact}
                       activeInstanceId={selectedInstanceId}
@@ -3316,7 +3323,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     />
                   )}
 
-                  {isComposerFooterCompact ? (
+                  {variant === "reply" ? null : isComposerFooterCompact ? (
                     <CompactComposerControlsMenu
                       interactionMode={interactionMode}
                       runtimeMode={runtimeMode}
