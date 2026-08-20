@@ -551,7 +551,9 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
         )}
       </div>
 
-      <div className="shrink-0 px-2 pb-2">
+      {/* Flush to the panel bottom with the main composer's horizontal insets,
+          so the two composers bottom-align across the divider. */}
+      <div className="shrink-0 px-3 pt-1.5 sm:px-5 sm:pt-2">
         {sendError !== null ? (
           <p className="px-2 pb-1 text-xs text-destructive">{sendError}</p>
         ) : null}
