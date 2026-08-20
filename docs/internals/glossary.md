@@ -38,6 +38,14 @@ The main durable unit of conversation and workspace history. In [the orchestrati
 
 A single user-to-assistant work cycle inside a thread. It starts with user input and ends when the session leaves `running` status, which [projector.ts][4] treats as the authoritative completion signal (`settledTurnStateForSessionStatus`). Checkpoint and diff work may settle afterward without changing when the turn ended. See [the contracts][1] and [ProviderRuntimeIngestion.ts][5].
 
+#### Reply thread
+
+A conversation fork inside a thread, modeled on Slack reply threads. A reply thread is a regular thread whose provider session is forked from a parent thread at an anchor turn, so its messages never enter the parent conversation context. It shares the parent workspace, branch, and worktree. Reply threads are hidden from thread lists and are reached only through the chip on their anchor turn. Depth is one: a reply thread cannot have reply threads. Archiving or deleting the parent cascades to its reply threads. See [reply-threads.md](./reply-threads.md).
+
+#### Anchor turn
+
+The completed turn in a parent thread from which a reply thread was forked. Each anchor turn can have at most one reply thread. Reverting the parent past an anchor turn also deletes the reply thread anchored there. See [reply-threads.md](./reply-threads.md).
+
 #### Activity
 
 A user-visible log item attached to a thread. In [the contracts][1], activities cover important non-message events like approvals, tool actions, and failures. They are projected into thread state in [projector.ts][4].
