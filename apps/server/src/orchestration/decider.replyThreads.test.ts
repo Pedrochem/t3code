@@ -258,6 +258,93 @@ it.layer(NodeServices.layer)("decider reply threads", (it) => {
     }),
   );
 
+  it.effect("accepts an anchor evidenced only by messages (projects without git)", () =>
+    Effect.gen(function* () {
+      const readModel = yield* seedReadModel;
+      // Projects without git never record checkpoint summaries; the anchor
+      // must still validate from the turn's messages.
+      const withMessageOnlyParent = {
+        ...readModel,
+        threads: readModel.threads.map((thread) =>
+          thread.id === "parent-1"
+            ? {
+                ...thread,
+                checkpoints: [],
+                latestTurn: null,
+                messages: [
+                  {
+                    id: MessageId.make("m-user-1"),
+                    role: "user" as const,
+                    text: "hi",
+                    turnId: asTurnId("turn-msg"),
+                    streaming: false,
+                    createdAt: now,
+                    updatedAt: now,
+                  },
+                  {
+                    id: MessageId.make("m-assistant-1"),
+                    role: "assistant" as const,
+                    text: "hello",
+                    turnId: asTurnId("turn-msg"),
+                    streaming: false,
+                    createdAt: now,
+                    updatedAt: now,
+                  },
+                ],
+              }
+            : thread,
+        ),
+      };
+      const decided = yield* decideOrchestrationCommand({
+        command: replyThreadCreateCommand({
+          commandId: "cmd-reply-msg-anchor",
+          threadId: "reply-1",
+          parentThreadId: "parent-1",
+          anchorTurnId: "turn-msg",
+        }),
+        readModel: withMessageOnlyParent,
+      });
+      const events = Array.isArray(decided) ? decided : [decided];
+      expect(events[0]?.type).toBe("thread.created");
+    }),
+  );
+
+  it.effect("rejects the still running latest turn as an anchor", () =>
+    Effect.gen(function* () {
+      const readModel = yield* seedReadModel;
+      const withRunningLatestTurn = {
+        ...readModel,
+        threads: readModel.threads.map((thread) =>
+          thread.id === "parent-1"
+            ? {
+                ...thread,
+                latestTurn: {
+                  turnId: asTurnId("turn-running"),
+                  state: "running" as const,
+                  requestedAt: now,
+                  startedAt: now,
+                  completedAt: null,
+                  assistantMessageId: null,
+                },
+              }
+            : thread,
+        ),
+      };
+      const error = yield* Effect.flip(
+        decideOrchestrationCommand({
+          command: replyThreadCreateCommand({
+            commandId: "cmd-reply-running-anchor",
+            threadId: "reply-1",
+            parentThreadId: "parent-1",
+            anchorTurnId: "turn-running",
+          }),
+          readModel: withRunningLatestTurn,
+        }),
+      );
+      expect(error.message).toContain("not a completed turn");
+    }),
+  );
+
   it.effect("rejects a cross-project parent", () =>
     Effect.gen(function* () {
       const readModel = yield* seedReadModel;

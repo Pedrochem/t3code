@@ -219,11 +219,17 @@ export function requireReplyThreadCreatable(input: {
           ),
         );
       }
-      const anchorCompleted =
+      // The anchor must be a turn the read model knows about and must not be
+      // the still running latest turn. Older turns are complete by
+      // construction (turns are sequential), and checkpoints alone cannot be
+      // the evidence: projects without git never record checkpoint summaries.
+      const anchorKnown =
         parent.checkpoints.some((checkpoint) => checkpoint.turnId === input.anchorTurnId) ||
-        (parent.latestTurn?.turnId === input.anchorTurnId &&
-          parent.latestTurn.completedAt !== null);
-      if (!anchorCompleted) {
+        parent.latestTurn?.turnId === input.anchorTurnId ||
+        parent.messages.some((message) => message.turnId === input.anchorTurnId);
+      const anchorIsUnfinishedLatestTurn =
+        parent.latestTurn?.turnId === input.anchorTurnId && parent.latestTurn.completedAt === null;
+      if (!anchorKnown || anchorIsUnfinishedLatestTurn) {
         return Effect.fail(
           invariantError(
             input.command.type,

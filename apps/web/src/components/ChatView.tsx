@@ -2268,8 +2268,9 @@ function ChatViewContent(props: ChatViewProps) {
         : [],
     [activeThread, isServerThread, threadShells],
   );
-  // Chips key off the anchor turn's assistant message (via its checkpoint
-  // summary) so a multi-message turn renders exactly one chip.
+  // Chips key off the anchor turn's LAST assistant message so a multi-message
+  // turn renders exactly one chip. Derived from messages, not checkpoint
+  // summaries: projects without git never record checkpoints.
   const replyThreadAnchorsByMessageId = useMemo(() => {
     const anchors = new Map<MessageId, ReplyThreadAnchorInfo>();
     if (activeThread == null || replyThreadChildren.length === 0) return anchors;
@@ -2278,11 +2279,17 @@ function ChatViewContent(props: ChatViewProps) {
         shell.anchorTurnId != null ? [[shell.anchorTurnId, shell] as const] : [],
       ),
     );
-    for (const checkpoint of activeThread.checkpoints) {
-      const child = childrenByAnchorTurnId.get(checkpoint.turnId);
-      if (!child || checkpoint.assistantMessageId === null) continue;
-      anchors.set(checkpoint.assistantMessageId, {
-        turnId: checkpoint.turnId,
+    const lastAssistantMessageIdByTurnId = new Map<TurnId, MessageId>();
+    for (const message of activeThread.messages) {
+      if (message.role !== "assistant" || message.turnId === null) continue;
+      if (!childrenByAnchorTurnId.has(message.turnId)) continue;
+      lastAssistantMessageIdByTurnId.set(message.turnId, message.id);
+    }
+    for (const [turnId, messageId] of lastAssistantMessageIdByTurnId) {
+      const child = childrenByAnchorTurnId.get(turnId);
+      if (!child) continue;
+      anchors.set(messageId, {
+        turnId,
         threadId: child.id,
         messageCount: child.messageCount ?? 0,
         updatedAt: child.updatedAt,

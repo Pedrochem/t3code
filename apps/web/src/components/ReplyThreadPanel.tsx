@@ -9,6 +9,7 @@
  * stop, and approval responses.
  */
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   ProviderApprovalDecision,
@@ -170,8 +171,12 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
     });
     setIsSendBusy(false);
     if (result._tag === "Failure") {
-      const cause = result.cause;
-      setSendError(cause instanceof Error ? cause.message : "Could not send the reply. Try again.");
+      const error = squashAtomCommandFailure(result);
+      setSendError(
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : "Could not send the reply. Try again.",
+      );
       return;
     }
     setDraftText("");
