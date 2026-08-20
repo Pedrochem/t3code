@@ -594,7 +594,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         pendingApprovalCount,
         pendingUserInputCount,
         hasActionableProposedPlan: hasActionableProposedPlan ? 1 : 0,
-        messageCount: messages.length,
+        interactionCount: messages.filter((message) => message.role === "user").length,
       });
     });
 
@@ -630,7 +630,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             pendingApprovalCount: 0,
             pendingUserInputCount: 0,
             hasActionableProposedPlan: 0,
-            messageCount: 0,
+            interactionCount: 0,
             deletedAt: null,
           });
           return;

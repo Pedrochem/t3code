@@ -48,8 +48,8 @@ export const ProjectionThread = Schema.Struct({
   titleRegenerationRequestId: Schema.optional(Schema.NullOr(CommandId)),
   titleRegenerationStartedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
-  // Total messages in the thread; drives the reply thread chip's "N replies".
-  messageCount: Schema.optional(Schema.NullOr(NonNegativeInt)),
+  // User to assistant exchanges; drives the reply thread chip's count.
+  interactionCount: Schema.optional(Schema.NullOr(NonNegativeInt)),
   pendingApprovalCount: NonNegativeInt,
   pendingUserInputCount: NonNegativeInt,
   hasActionableProposedPlan: NonNegativeInt,
