@@ -494,10 +494,7 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
         <MessagesSquare className="size-3.5 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">Reply thread</p>
-          <p className="truncate text-xs text-muted-foreground">{parentThread.title}</p>
-        </div>
+        <p className="min-w-0 flex-1 truncate text-sm font-medium">Reply thread</p>
       </div>
 
       {anchorMessage ? (
@@ -511,9 +508,6 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
               lineBreaks={false}
             />
           </div>
-          <p className="border-t border-border/40 px-4 py-1.5 text-xs text-muted-foreground">
-            {timelineEntries.length === 0 ? "Reply below to start the thread" : "Replies"}
-          </p>
         </div>
       ) : null}
 
