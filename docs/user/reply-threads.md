@@ -8,7 +8,7 @@ Reply threads are currently available on Claude threads.
 
 Hover over a message and choose the reply icon, or use the same icon in the message's action row. A panel opens beside the conversation. The composer works exactly like the main thread's, including attachments and the context meter, minus the controls a reply thread locks. The reply thread is only created when you send the first message, so closing the panel without sending leaves nothing behind.
 
-Each turn can have one reply thread. Once one exists, the message shows a chip with the number of replies (one of your messages plus the agent's answer counts as one reply) and the time of the last activity. Click the chip to reopen the conversation.
+Each turn can have one reply thread. Once one exists, the reply icon in the message's action row becomes a reply count (one of your messages plus the agent's answer counts as one reply). Click it to reopen the conversation.
 
 ## What a reply thread inherits
 

@@ -1090,7 +1090,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </Tooltip>
           <div className="flex items-center gap-0.5">
             {canRevertAgentWork && <RevertUserMessageButton messageId={row.message.id} />}
-            <ReplyInThreadButton turnId={row.message.turnId} />
+            <ReplyThreadRowAction turnId={row.message.turnId} />
             {displayedUserMessage.copyText && (
               <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
             )}
@@ -1101,11 +1101,40 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   );
 }
 
-function ReplyInThreadButton({ turnId }: { turnId: TurnId | null }) {
+/**
+ * The reply affordance in a message's action row: "Reply in sub-thread"
+ * while the turn has no reply thread, and the "N replies" opener once one
+ * exists.
+ */
+function ReplyThreadRowAction({ turnId }: { turnId: TurnId | null }) {
   const ctx = use(TimelineRowCtx);
   const activity = use(TimelineRowActivityCtx);
   const onOpenReplyThread = ctx.onOpenReplyThread;
   if (!onOpenReplyThread || turnId === null) return null;
+
+  let anchor = null;
+  for (const candidate of ctx.replyThreadAnchorsByMessageId.values()) {
+    if (candidate.turnId === turnId) {
+      anchor = candidate;
+      break;
+    }
+  }
+  if (anchor) {
+    return (
+      <Button
+        type="button"
+        size="xs"
+        variant="ghost"
+        onClick={() => onOpenReplyThread(turnId)}
+        aria-label="Open reply thread"
+        className="gap-1 whitespace-nowrap"
+      >
+        <MessagesSquareIcon className="size-3 shrink-0" />
+        {anchor.interactionCount === 1 ? "1 reply" : `${anchor.interactionCount} replies`}
+      </Button>
+    );
+  }
+
   // Forking anchors to a completed turn; hide while this turn still runs.
   if (activity.isWorking && activity.latestTurnId === turnId) return null;
 
@@ -1126,32 +1155,6 @@ function ReplyInThreadButton({ turnId }: { turnId: TurnId | null }) {
       </TooltipTrigger>
       <TooltipPopup side="top">Reply in sub-thread</TooltipPopup>
     </Tooltip>
-  );
-}
-
-/** Slack style "N replies" chip on the anchor turn's assistant message. */
-function ReplyThreadChip({ messageId }: { messageId: MessageId }) {
-  const ctx = use(TimelineRowCtx);
-  const anchor = ctx.replyThreadAnchorsByMessageId.get(messageId);
-  const onOpenReplyThread = ctx.onOpenReplyThread;
-  if (!anchor || !onOpenReplyThread) return null;
-
-  return (
-    <div className="mt-1.5">
-      <button
-        type="button"
-        onClick={() => onOpenReplyThread(anchor.turnId)}
-        className="flex items-center gap-1.5 rounded-md border border-border/70 px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-border hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
-      >
-        <MessagesSquareIcon className="size-3 shrink-0" />
-        <span className="font-medium">
-          {anchor.interactionCount === 1 ? "1 reply" : `${anchor.interactionCount} replies`}
-        </span>
-        <span className="tabular-nums">
-          {formatDayAwareTimestamp(anchor.updatedAt, ctx.timestampFormat)}
-        </span>
-      </button>
-    </div>
   );
 }
 
@@ -1221,11 +1224,10 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           resolvedTheme={ctx.resolvedTheme}
           onOpenTurnDiff={ctx.onOpenTurnDiff}
         />
-        <ReplyThreadChip messageId={row.message.id} />
         {row.showAssistantMeta ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
             <AssistantCopyButton row={row} />
-            <ReplyInThreadButton turnId={row.message.turnId} />
+            <ReplyThreadRowAction turnId={row.message.turnId} />
             {!row.message.streaming && (
               <Tooltip>
                 <TooltipTrigger
