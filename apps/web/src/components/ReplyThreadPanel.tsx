@@ -538,6 +538,7 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
           <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
             <ChatComposer
               variant="reply"
+              {...(messages.length > 0 ? { promptPlaceholder: "Reply..." } : {})}
               composerDraftTarget={composerDraftTarget}
               environmentId={environmentId}
               routeKind="server"
