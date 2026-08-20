@@ -62,7 +62,6 @@ import { primaryServerKeybindingsAtom } from "~/state/server";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 
-import ChatMarkdown from "./ChatMarkdown";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { readFileAsDataUrl } from "./ChatView.logic";
@@ -160,9 +159,24 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
 
   const turnPlans = useMemo(() => deriveTurnPlans(activities), [activities]);
   const workLogEntries = useMemo(() => deriveWorkLogEntries(activities), [activities]);
+  // The message being replied to leads the conversation as a regular row, so
+  // it scrolls away with the replies instead of staying pinned.
+  const anchorMessage = useMemo(() => {
+    let anchor = null;
+    for (const message of parentThread.messages) {
+      if (message.role === "assistant" && message.turnId === target.anchorTurnId) {
+        anchor = message;
+      }
+    }
+    return anchor;
+  }, [parentThread.messages, target.anchorTurnId]);
+  const timelineMessages = useMemo(
+    () => (anchorMessage ? [anchorMessage, ...messages] : messages),
+    [anchorMessage, messages],
+  );
   const timelineEntries = useMemo(
-    () => deriveTimelineEntries(messages, proposedPlans, workLogEntries, turnPlans),
-    [messages, proposedPlans, turnPlans, workLogEntries],
+    () => deriveTimelineEntries(timelineMessages, proposedPlans, workLogEntries, turnPlans),
+    [timelineMessages, proposedPlans, turnPlans, workLogEntries],
   );
   const pendingApprovals = useMemo(() => derivePendingApprovals(activities), [activities]);
   const activePendingApproval = pendingApprovals[0] ?? null;
@@ -227,19 +241,6 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
   const lockedProvider =
     getProviderInstanceEntry(providerStatuses as ServerProvider[], lockedModelSelection.instanceId)
       ?.driverKind ?? null;
-
-  // The message being replied to, shown only while the reply thread is
-  // still empty; once replies exist the conversation itself carries context.
-  const anchorMessage = useMemo(() => {
-    if (timelineEntries.length > 0) return null;
-    let anchor = null;
-    for (const message of parentThread.messages) {
-      if (message.role === "assistant" && message.turnId === target.anchorTurnId) {
-        anchor = message;
-      }
-    }
-    return anchor;
-  }, [parentThread.messages, target.anchorTurnId, timelineEntries.length]);
 
   const handleSend = useCallback(async () => {
     if (sendInFlightRef.current || isSendBusy) return;
@@ -498,18 +499,6 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
         <MessagesSquare className="size-3.5 shrink-0 text-muted-foreground" />
         <p className="min-w-0 flex-1 truncate text-sm font-medium">Reply thread</p>
       </div>
-
-      {anchorMessage ? (
-        <div className="max-h-56 shrink-0 overflow-y-auto border-b border-border/60 px-4 py-3">
-          <ChatMarkdown
-            text={anchorMessage.text}
-            cwd={markdownCwd}
-            threadRef={parentRef}
-            isStreaming={false}
-            lineBreaks={false}
-          />
-        </div>
-      ) : null}
 
       <div className="min-h-0 flex-1">
         {timelineEntries.length === 0 && !isWorking ? (
