@@ -4,6 +4,7 @@ import type {
   EnvironmentThread,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
+import { isTopLevelThreadShell } from "@t3tools/client-runtime/state/models";
 import {
   type EnvironmentThreadStatus,
   mergeEnvironmentThread,
@@ -118,6 +119,12 @@ export function useServerConfigs(): ReadonlyMap<EnvironmentId, ServerConfig> {
 
 export function useThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
   return useAtomValue(environmentThreadShells.threadShellsAtom);
+}
+
+/** Thread shells for list surfaces: reply threads are hidden everywhere. */
+export function useTopLevelThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
+  const shells = useThreadShells();
+  return useMemo(() => shells.filter(isTopLevelThreadShell), [shells]);
 }
 
 export function useAllEnvironmentShellsBootstrapped(): boolean {

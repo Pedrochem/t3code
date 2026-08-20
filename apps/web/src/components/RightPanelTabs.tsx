@@ -6,6 +6,7 @@ import {
   Files,
   GitPullRequest,
   Globe2,
+  MessagesSquare,
   Plus,
   TerminalSquare,
   Volume2,
@@ -497,6 +498,8 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "agents":
       return "Agents";
+    case "reply-thread":
+      return "Reply";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -582,6 +585,8 @@ function SurfaceIcon({
     }
     case "agents":
       return <Bot className="size-3 shrink-0" />;
+    case "reply-thread":
+      return <MessagesSquare className="size-3 shrink-0" />;
   }
 }
 

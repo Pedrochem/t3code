@@ -22,6 +22,7 @@ export const RIGHT_PANEL_KINDS = [
   "terminal",
   "pull-request",
   "agents",
+  "reply-thread",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -62,13 +63,27 @@ export type RightPanelSurface =
       repository: string;
       number: number;
     }
-  | { id: "agents"; kind: "agents" };
+  | { id: "agents"; kind: "agents" }
+  | {
+      /**
+       * The reply thread panel beside its parent thread. A singleton swapped
+       * in place when a different anchor's reply thread is opened (Slack
+       * behavior), never a set of peer tabs.
+       */
+      id: "reply-thread";
+      kind: "reply-thread";
+      /** Anchor turn in the parent thread this panel hangs off. */
+      anchorTurnId: string;
+      /** The reply thread shown; null while drafting on a fresh anchor. */
+      threadId: string | null;
+    };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 // v9 removed the "plan" surface kind (plans render inline in the transcript).
 // v10 keys pull-request surfaces by reference instead of a singleton tab.
 // v11 stops persisting the pull-request list's shared panel, so a restart opens the page fresh.
-const RIGHT_PANEL_STORAGE_VERSION = 11;
+// v12 adds the singleton "reply-thread" surface.
+const RIGHT_PANEL_STORAGE_VERSION = 12;
 
 /**
  * The pull-request list's shared panel (see PULL_REQUESTS_PANEL_ID in the route) is session
@@ -86,7 +101,7 @@ interface RightPanelStoreState {
   byThreadKey: Record<string, ThreadRightPanelState>;
   open: (
     ref: ScopedThreadRef,
-    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "reply-thread">,
   ) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
@@ -115,7 +130,11 @@ interface RightPanelStoreState {
   toggleVisibility: (ref: ScopedThreadRef) => void;
   toggle: (
     ref: ScopedThreadRef,
-    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "reply-thread">,
+  ) => void;
+  openReplyThread: (
+    ref: ScopedThreadRef,
+    target: { anchorTurnId: string; threadId: string | null },
   ) => void;
   removeThread: (ref: ScopedThreadRef) => void;
 }
@@ -127,7 +146,7 @@ const EMPTY_THREAD_STATE: ThreadRightPanelState = {
 };
 
 const singletonSurface = (
-  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request">,
+  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request" | "reply-thread">,
 ): RightPanelSurface => {
   switch (kind) {
     case "diff":
@@ -642,6 +661,24 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               return upsertSurface(current, existing ?? browserSurface(null));
             }
             return upsertSurface(current, singletonSurface(kind));
+          }),
+        })),
+      openReplyThread: (ref, target) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+            const surface: RightPanelSurface = {
+              id: "reply-thread",
+              kind: "reply-thread",
+              anchorTurnId: target.anchorTurnId,
+              threadId: target.threadId,
+            };
+            return {
+              isOpen: true,
+              activeSurfaceId: surface.id,
+              surfaces: current.surfaces.some((entry) => entry.id === "reply-thread")
+                ? current.surfaces.map((entry) => (entry.id === "reply-thread" ? surface : entry))
+                : [...current.surfaces, surface],
+            };
           }),
         })),
       removeThread: (ref) =>

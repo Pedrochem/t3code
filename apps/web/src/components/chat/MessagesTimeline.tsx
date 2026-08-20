@@ -53,6 +53,7 @@ import {
   GlobeIcon,
   HammerIcon,
   MessageCircleIcon,
+  MessagesSquareIcon,
   MousePointerClickIcon,
   PaintbrushIcon,
   SearchIcon,
@@ -145,6 +146,19 @@ interface TimelineRowSharedState {
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
+  /** Null hides the reply thread affordance (unsupported provider, or the
+   * timeline already renders inside a reply thread panel). */
+  onOpenReplyThread: ((turnId: TurnId) => void) | null;
+  replyThreadAnchorsByMessageId: ReadonlyMap<MessageId, ReplyThreadAnchorInfo>;
+}
+
+/** Existing reply thread summary for the anchor chip, keyed by the anchor
+ * turn's assistant message so the chip renders once per turn. */
+export interface ReplyThreadAnchorInfo {
+  readonly turnId: TurnId;
+  readonly threadId: string;
+  readonly messageCount: number;
+  readonly updatedAt: string;
 }
 
 interface TimelineRowActivityState {
@@ -188,6 +202,7 @@ function TimelineLoadEarlierHeader({
 }
 const TIMELINE_LIST_FOOTER = <div className="h-3 sm:h-4" />;
 const EMPTY_TIMELINE_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
+const EMPTY_REPLY_THREAD_ANCHORS: ReadonlyMap<MessageId, ReplyThreadAnchorInfo> = new Map();
 const TIMELINE_MAINTAIN_SCROLL_AT_END = {
   animated: false,
   on: {
@@ -240,6 +255,8 @@ interface MessagesTimelineProps {
   topFadeEnabled?: boolean;
   /** Non-null when older turns exist beyond the loaded window. */
   loadEarlier?: { readonly loading: boolean; readonly onLoadEarlier: () => void } | null;
+  onOpenReplyThread?: ((turnId: TurnId) => void) | null;
+  replyThreadAnchorsByMessageId?: ReadonlyMap<MessageId, ReplyThreadAnchorInfo>;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,6 +294,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onManualNavigation,
   hideEmptyPlaceholder = false,
   topFadeEnabled = false,
+  onOpenReplyThread = null,
+  replyThreadAnchorsByMessageId = EMPTY_REPLY_THREAD_ANCHORS,
   loadEarlier = null,
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
@@ -515,6 +534,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleWorkGroup,
       agentPanelModel,
       onOpenAgents,
+      onOpenReplyThread,
+      replyThreadAnchorsByMessageId,
     }),
     [
       timestampFormat,
@@ -529,6 +550,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onOpenTurnDiff,
       onToggleTurnFold,
       onToggleWorkGroup,
+      onOpenReplyThread,
+      replyThreadAnchorsByMessageId,
       agentPanelModel,
       onOpenAgents,
     ],
@@ -1066,12 +1089,67 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </Tooltip>
           <div className="flex items-center gap-0.5">
             {canRevertAgentWork && <RevertUserMessageButton messageId={row.message.id} />}
+            <ReplyInThreadButton turnId={row.message.turnId} />
             {displayedUserMessage.copyText && (
               <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
             )}
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ReplyInThreadButton({ turnId }: { turnId: TurnId | null }) {
+  const ctx = use(TimelineRowCtx);
+  const activity = use(TimelineRowActivityCtx);
+  const onOpenReplyThread = ctx.onOpenReplyThread;
+  if (!onOpenReplyThread || turnId === null) return null;
+  // Forking anchors to a completed turn; hide while this turn still runs.
+  if (activity.isWorking && activity.latestTurnId === turnId) return null;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            onClick={() => onOpenReplyThread(turnId)}
+            aria-label="Reply in thread"
+          />
+        }
+      >
+        <MessagesSquareIcon className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Reply in thread</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/** Slack style "N replies" chip on the anchor turn's assistant message. */
+function ReplyThreadChip({ messageId }: { messageId: MessageId }) {
+  const ctx = use(TimelineRowCtx);
+  const anchor = ctx.replyThreadAnchorsByMessageId.get(messageId);
+  const onOpenReplyThread = ctx.onOpenReplyThread;
+  if (!anchor || !onOpenReplyThread) return null;
+
+  return (
+    <div className="mt-1.5">
+      <button
+        type="button"
+        onClick={() => onOpenReplyThread(anchor.turnId)}
+        className="flex items-center gap-1.5 rounded-md border border-border/70 px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-border hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+      >
+        <MessagesSquareIcon className="size-3 shrink-0" />
+        <span className="font-medium">
+          {anchor.messageCount === 1 ? "1 reply" : `${anchor.messageCount} replies`}
+        </span>
+        <span className="tabular-nums">
+          {formatDayAwareTimestamp(anchor.updatedAt, ctx.timestampFormat)}
+        </span>
+      </button>
     </div>
   );
 }
@@ -1142,9 +1220,11 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           resolvedTheme={ctx.resolvedTheme}
           onOpenTurnDiff={ctx.onOpenTurnDiff}
         />
+        <ReplyThreadChip messageId={row.message.id} />
         {row.showAssistantMeta ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
             <AssistantCopyButton row={row} />
+            <ReplyInThreadButton turnId={row.message.turnId} />
             {!row.message.streaming && (
               <Tooltip>
                 <TooltipTrigger
