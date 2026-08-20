@@ -305,6 +305,8 @@ export function projectEvent(
             settledAt: null,
             snoozedUntil: null,
             snoozedAt: null,
+            parentThreadId: payload.parentThreadId ?? null,
+            anchorTurnId: payload.anchorTurnId ?? null,
             deletedAt: null,
             messages: [],
             activities: [],

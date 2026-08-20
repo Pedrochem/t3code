@@ -89,7 +89,10 @@ type LegacyProviderRuntimeEvent = {
   readonly [key: string]: unknown;
 };
 
-function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
+function makeFakeCodexAdapter(
+  provider: ProviderDriverKind = CODEX_DRIVER,
+  options?: { readonly sessionFork?: "native" | "unsupported" },
+) {
   const sessions = new Map<ThreadId, ProviderSession>();
   const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
 
@@ -204,10 +207,25 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
       }),
   );
 
+  const forkSession = vi.fn(
+    (input: {
+      parentThreadId: ThreadId;
+      childThreadId: ThreadId;
+      anchorTurnId: TurnId;
+      parentResumeCursor: unknown;
+    }): Effect.Effect<unknown, ProviderAdapterError> =>
+      Effect.succeed({
+        threadId: input.childThreadId,
+        forkedFrom: input.parentThreadId,
+        anchorTurnId: input.anchorTurnId,
+      }),
+  );
+
   const adapter: ProviderAdapterShape<ProviderAdapterError> = {
     provider,
     capabilities: {
       sessionModelSwitch: "in-session",
+      sessionFork: options?.sessionFork ?? "native",
     },
     startSession,
     sendTurn,
@@ -219,6 +237,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     hasSession,
     readThread,
     rollbackThread,
+    forkSession,
     stopAll,
     get streamEvents() {
       return Stream.fromPubSub(runtimeEventPubSub);
@@ -254,6 +273,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     hasSession,
     readThread,
     rollbackThread,
+    forkSession,
     stopAll,
   };
 }
@@ -275,7 +295,7 @@ const hasMetricSnapshot = (
 function makeProviderServiceLayer() {
   const codex = makeFakeCodexAdapter();
   const claude = makeFakeCodexAdapter(CLAUDE_AGENT_DRIVER);
-  const cursor = makeFakeCodexAdapter(CURSOR_DRIVER);
+  const cursor = makeFakeCodexAdapter(CURSOR_DRIVER, { sessionFork: "unsupported" });
   const registry = makeAdapterRegistryMock({
     [ProviderDriverKind.make("codex")]: codex.adapter,
     [ProviderDriverKind.make("claudeAgent")]: claude.adapter,
@@ -938,6 +958,124 @@ routing.layer("ProviderServiceLive routing", (it) => {
         assert.equal(startPayload.threadId, session.threadId);
       }
       assert.equal(routing.codex.sendTurn.mock.calls.length, 1);
+    }),
+  );
+
+  it.effect("seeds a reply thread's first session start by forking the parent", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      routing.claude.startSession.mockClear();
+      routing.claude.forkSession.mockClear();
+
+      const parentThreadId = asThreadId("fork-parent-1");
+      const childThreadId = asThreadId("fork-child-1");
+      const parentSession = yield* provider.startSession(parentThreadId, {
+        provider: CLAUDE_AGENT_DRIVER,
+        providerInstanceId: claudeAgentInstanceId,
+        threadId: parentThreadId,
+        cwd: "/tmp/project",
+        runtimeMode: "full-access",
+      });
+
+      yield* provider.startSession(childThreadId, {
+        provider: CLAUDE_AGENT_DRIVER,
+        providerInstanceId: claudeAgentInstanceId,
+        threadId: childThreadId,
+        cwd: "/tmp/project",
+        runtimeMode: "full-access",
+        forkFrom: {
+          parentThreadId,
+          anchorTurnId: asTurnId("anchor-turn-1"),
+        },
+      });
+
+      assert.equal(routing.claude.forkSession.mock.calls.length, 1);
+      const forkInput = routing.claude.forkSession.mock.calls[0]?.[0];
+      assert.deepEqual(forkInput, {
+        parentThreadId,
+        childThreadId,
+        anchorTurnId: asTurnId("anchor-turn-1"),
+        parentResumeCursor: parentSession.resumeCursor,
+      });
+
+      const childStartInput = routing.claude.startSession.mock.calls.at(-1)?.[0] as {
+        resumeCursor?: unknown;
+      };
+      assert.deepEqual(childStartInput.resumeCursor, {
+        threadId: childThreadId,
+        forkedFrom: parentThreadId,
+        anchorTurnId: asTurnId("anchor-turn-1"),
+      });
+
+      // A persisted cursor outranks fork intent: restarting the child session
+      // must not fork again.
+      yield* provider.stopSession({ threadId: childThreadId });
+      routing.claude.forkSession.mockClear();
+      yield* provider.startSession(childThreadId, {
+        provider: CLAUDE_AGENT_DRIVER,
+        providerInstanceId: claudeAgentInstanceId,
+        threadId: childThreadId,
+        cwd: "/tmp/project",
+        runtimeMode: "full-access",
+        forkFrom: {
+          parentThreadId,
+          anchorTurnId: asTurnId("anchor-turn-1"),
+        },
+      });
+      assert.equal(routing.claude.forkSession.mock.calls.length, 0);
+
+      yield* provider.stopSession({ threadId: childThreadId });
+      yield* provider.stopSession({ threadId: parentThreadId });
+      // Later tests in this block assert absolute call counts on the shared mock.
+      routing.claude.startSession.mockClear();
+    }),
+  );
+
+  it.effect("rejects a reply thread fork when the parent has no persisted cursor", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const result = yield* Effect.flip(
+        provider.startSession(asThreadId("fork-child-orphan"), {
+          provider: CLAUDE_AGENT_DRIVER,
+          providerInstanceId: claudeAgentInstanceId,
+          threadId: asThreadId("fork-child-orphan"),
+          runtimeMode: "full-access",
+          forkFrom: {
+            parentThreadId: asThreadId("fork-parent-missing"),
+            anchorTurnId: asTurnId("anchor-turn-1"),
+          },
+        }),
+      );
+      assert.match(String(result), /no provider resume state is persisted/);
+    }),
+  );
+
+  it.effect("rejects a reply thread fork on providers without fork support", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const cursorInstanceId = ProviderInstanceId.make("cursor");
+      const parentThreadId = asThreadId("fork-parent-cursor");
+      yield* provider.startSession(parentThreadId, {
+        provider: CURSOR_DRIVER,
+        providerInstanceId: cursorInstanceId,
+        threadId: parentThreadId,
+        runtimeMode: "full-access",
+      });
+      const result = yield* Effect.flip(
+        provider.startSession(asThreadId("fork-child-cursor"), {
+          provider: CURSOR_DRIVER,
+          providerInstanceId: cursorInstanceId,
+          threadId: asThreadId("fork-child-cursor"),
+          runtimeMode: "full-access",
+          forkFrom: {
+            parentThreadId,
+            anchorTurnId: asTurnId("anchor-turn-1"),
+          },
+        }),
+      );
+      assert.match(String(result), /does not support forking sessions/);
+
+      yield* provider.stopSession({ threadId: parentThreadId });
     }),
   );
 

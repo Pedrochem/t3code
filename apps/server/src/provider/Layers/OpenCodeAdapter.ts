@@ -1719,6 +1719,7 @@ export function makeOpenCodeAdapter(
       provider: PROVIDER,
       capabilities: {
         sessionModelSwitch: "in-session",
+        sessionFork: "unsupported",
       },
       startSession,
       sendTurn,
@@ -1730,6 +1731,14 @@ export function makeOpenCodeAdapter(
       hasSession,
       readThread,
       rollbackThread,
+      forkSession: () =>
+        Effect.fail(
+          new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "forkSession",
+            issue: "Session forking is not supported by this provider yet.",
+          }),
+        ),
       stopAll,
       get streamEvents() {
         return Stream.fromQueue(runtimeEvents);

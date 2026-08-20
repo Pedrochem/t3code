@@ -411,6 +411,11 @@ export const OrchestrationThread = Schema.Struct({
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   // Pending-only state. Optional so older servers remain compatible.
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
+  // Reply threads: set together when this thread was forked from a parent
+  // thread's provider session at an anchor turn (see docs/internals/reply-threads.md).
+  // Optional so payloads from pre-reply-thread servers still decode.
+  parentThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  anchorTurnId: Schema.optional(Schema.NullOr(TurnId)),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -469,6 +474,10 @@ export const OrchestrationThreadShell = Schema.Struct({
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
+  // Reply threads: see OrchestrationThread. Shells carry these so clients can
+  // hide reply threads from lists and resolve anchor chips without details.
+  parentThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  anchorTurnId: Schema.optional(Schema.NullOr(TurnId)),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
@@ -677,6 +686,10 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  // Reply threads: both set to fork the new thread from parentThreadId's
+  // provider session at anchorTurnId. Validated together in the decider.
+  parentThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  anchorTurnId: Schema.optional(Schema.NullOr(TurnId)),
   createdAt: IsoDateTime,
 });
 
@@ -804,6 +817,10 @@ const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  // Reply threads: see ThreadCreateCommand. Carried here because reply
+  // threads are created lazily on first send.
+  parentThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  anchorTurnId: Schema.optional(Schema.NullOr(TurnId)),
   createdAt: IsoDateTime,
 });
 
@@ -1133,6 +1150,9 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  // Reply threads: see ThreadCreateCommand.
+  parentThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  anchorTurnId: Schema.optional(Schema.NullOr(TurnId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

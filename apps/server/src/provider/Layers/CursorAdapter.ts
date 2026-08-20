@@ -1170,12 +1170,20 @@ export function makeCursorAdapter(
 
     return {
       provider: PROVIDER,
-      capabilities: { sessionModelSwitch: "in-session" },
+      capabilities: { sessionModelSwitch: "in-session", sessionFork: "unsupported" },
       startSession,
       sendTurn,
       interruptTurn,
       readThread,
       rollbackThread,
+      forkSession: () =>
+        Effect.fail(
+          new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "forkSession",
+            issue: "Session forking is not supported by this provider.",
+          }),
+        ),
       respondToRequest,
       respondToUserInput,
       stopSession,
