@@ -480,6 +480,9 @@ export const OrchestrationThreadShell = Schema.Struct({
   anchorTurnId: Schema.optional(Schema.NullOr(TurnId)),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
+  // Total messages in the thread; drives the reply thread chip's "N replies".
+  // Optional so payloads from older servers still decode.
+  messageCount: Schema.optional(Schema.NullOr(NonNegativeInt)),
   hasPendingApprovals: Schema.Boolean,
   hasPendingUserInput: Schema.Boolean,
   hasActionableProposedPlan: Schema.Boolean,
