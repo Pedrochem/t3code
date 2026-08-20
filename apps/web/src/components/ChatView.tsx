@@ -6362,6 +6362,7 @@ function ChatViewContent(props: ChatViewProps) {
         resolvedTheme={resolvedTheme}
         markdownCwd={gitCwd ?? undefined}
         workspaceRoot={activeWorkspaceRoot}
+        mainComposerHeight={composerOverlayHeight}
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
