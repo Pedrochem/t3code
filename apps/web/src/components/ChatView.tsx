@@ -1618,10 +1618,13 @@ export default function ChatView(props: ChatViewProps) {
     // collapses through this wrapper, so its own height overstates what it
     // adds below the host. Measure from the host's bottom edge instead.
     const measure = () => {
-      const host = element.parentElement?.previousElementSibling;
-      const hostBottom =
-        host?.getBoundingClientRect().bottom ?? element.getBoundingClientRect().top;
-      const height = Math.ceil(element.getBoundingClientRect().bottom - hostBottom);
+      const host = element
+        .closest('[data-slot="composer-shell"]')
+        ?.querySelector<HTMLElement>('[data-slot="composer-host"]');
+      if (!host) return;
+      const height = Math.ceil(
+        element.getBoundingClientRect().bottom - host.getBoundingClientRect().bottom,
+      );
       if (height > 0) setContextStripHeight(height);
     };
     measure();
