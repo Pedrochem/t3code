@@ -169,7 +169,6 @@ import {
   shouldAnimateComposerRestingTransition,
   shouldUseCompactComposerPrimaryActions,
   shouldUseCompactComposerFooter,
-  shouldUseRestingComposerLayout,
 } from "../composerFooterLayout";
 import { measureRestingComposerControls } from "./restingComposerControlsMeasurement";
 import { observeResponsiveBreakpointFade, usePanelAnimationSettings } from "../../panelAnimations";
@@ -1342,8 +1341,6 @@ export interface ChatComposerProps {
   onRestingControlsVisibilityChange: (visible: boolean) => void;
   getTimelineScrollableNode: () => HTMLElement | null;
   isTimelineAtLogicalEnd: () => boolean;
-  /** Whether the timeline has more content than fits above the composer. */
-  timelineOverflows: boolean;
   onComposerOverlayHeightChange: (height: number) => void;
   /**
    * Whether the desktop resting layout is active. Reported from a layout
@@ -1460,7 +1457,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onRestingControlsVisibilityChange,
     getTimelineScrollableNode,
     isTimelineAtLogicalEnd,
-    timelineOverflows,
     onComposerOverlayHeightChange,
     onRestingChange,
     promptRef,
@@ -3867,20 +3863,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerSubmissionError !== null ||
     providerInputSubmissionError !== null ||
     hasImageAttachmentAttention;
-  // The reply variant has no footer controls to reveal, so it keeps the
-  // resting row whenever a single line fits and expands only for multiline
-  // drafts or extra chrome, instead of waiting for a timeline scroll.
+  // The resting row is the only layout on existing threads: focus, typing,
+  // and reaching the timeline end never expand it. Chrome that needs the
+  // full surface (menus, approvals, errors, drags) still does.
   const isComposerResting =
-    variant === "reply"
-      ? !isMobileViewport && !hasMultilinePrompt && !composerHasExpandedChrome
-      : shouldUseRestingComposerLayout({
-          isExistingThread: routeKind === "server" && activeThreadId !== null,
-          isMobileViewport,
-          isScrollCollapsed: isComposerScrollCollapsed,
-          hasExpandedChrome: composerHasExpandedChrome,
-          hasMultilinePrompt,
-          timelineOverflows,
-        });
+    !isMobileViewport &&
+    !composerHasExpandedChrome &&
+    (variant === "reply" || (routeKind === "server" && activeThreadId !== null));
   const expandedComposerImages = isComposerResting
     ? standaloneComposerImages.filter((image) => pendingSnapShotIdSet.has(image.id))
     : standaloneComposerImages;
@@ -5692,8 +5681,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   containerClassName={cn(isComposerResting && "min-w-0 flex-1")}
                   className={cn(
                     showMobilePendingAnswerActions && "max-sm:pb-11",
-                    isComposerResting &&
-                      "max-h-8 min-h-8 overflow-hidden whitespace-pre! leading-8",
+                    isComposerResting && "min-h-8 py-1 leading-6",
                   )}
                   placeholderClassName={cn(
                     isComposerResting &&

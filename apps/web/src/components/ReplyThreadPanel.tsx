@@ -134,7 +134,6 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
   const liveFollowRef = useRef(true);
   const [liveFollowEnabled, setLiveFollowEnabled] = useState(true);
   const [showScrollToEnd, setShowScrollToEnd] = useState(false);
-  const [timelineOverflows, setTimelineOverflows] = useState(false);
   const getTimelineScrollableNode = useCallback(
     () => listRef.current?.getScrollableNode() ?? null,
     [],
@@ -593,7 +592,6 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
             contentInsetEndAdjustment={0}
             liveFollowEnabled={liveFollowEnabled}
             onIsAtEndChange={onIsAtEndChange}
-            onContentOverflowChange={setTimelineOverflows}
             onManualNavigation={onManualNavigation}
             hideEmptyPlaceholder
           />
@@ -660,7 +658,6 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
               onRestingControlsVisibilityChange={NOOP}
               getTimelineScrollableNode={getTimelineScrollableNode}
               isTimelineAtLogicalEnd={isTimelineAtLogicalEnd}
-              timelineOverflows={timelineOverflows}
               onComposerOverlayHeightChange={NOOP}
               onRestingChange={NOOP}
               composerFilesRef={composerFilesRef}
