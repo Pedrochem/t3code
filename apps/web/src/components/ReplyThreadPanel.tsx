@@ -24,7 +24,7 @@ import type {
 } from "@t3tools/contracts";
 import { applyClaudePromptEffortPrefix, resolvePromptInjectedEffort } from "@t3tools/shared/model";
 import type { LegendListRef } from "@legendapp/list/react";
-import { MessagesSquare } from "lucide-react";
+import { ChevronDownIcon, MessagesSquare } from "lucide-react";
 import { memo, useCallback, useMemo, useRef, useState } from "react";
 
 import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
@@ -53,8 +53,11 @@ import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import { ComposerSurface } from "./chat/ComposerSurface";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
+import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
 import { readFileAsDataUrl } from "./ChatView.logic";
+import { Button } from "./ui/button";
 
 const EMPTY_LIST: readonly never[] = [];
 const NOOP = () => {};
@@ -79,12 +82,6 @@ interface ReplyThreadPanelProps {
   resolvedTheme: "light" | "dark";
   markdownCwd: string | undefined;
   workspaceRoot: string | undefined;
-  /**
-   * Measured height of the main thread's composer overlay (padding, shell,
-   * and any attached banner). The panel reserves the same height with the
-   * composer anchored on top, so both composers top-align across the divider.
-   */
-  mainComposerHeight: number;
 }
 
 export const ReplyThreadPanel = memo(function ReplyThreadPanel({
@@ -96,7 +93,6 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
   resolvedTheme,
   markdownCwd,
   workspaceRoot,
-  mainComposerHeight,
 }: ReplyThreadPanelProps) {
   const parentRef = useMemo(
     () => scopeThreadRef(environmentId, parentThread.id),
@@ -134,6 +130,19 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
   );
 
   const listRef = useRef<LegendListRef | null>(null);
+  const isAtEndRef = useRef(true);
+  const liveFollowRef = useRef(true);
+  const [liveFollowEnabled, setLiveFollowEnabled] = useState(true);
+  const [showScrollToEnd, setShowScrollToEnd] = useState(false);
+  const [timelineOverflows, setTimelineOverflows] = useState(false);
+  const getTimelineScrollableNode = useCallback(
+    () => listRef.current?.getScrollableNode() ?? null,
+    [],
+  );
+  const isTimelineAtLogicalEnd = useCallback(
+    () => resolveTimelineIsAtEnd(listRef.current?.getState()) ?? isAtEndRef.current,
+    [],
+  );
   const [isSendBusy, setIsSendBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   // Reply drafts before the thread exists key their composer state off a
@@ -505,6 +514,36 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
   const focusComposer = useCallback(() => {
     composerRef.current?.focusAtEnd();
   }, []);
+  // Live follow ends on a user scroll gesture and resumes once the list is
+  // back at its end, so streaming never drags the view away from what the
+  // user scrolled up to read.
+  const onManualNavigation = useCallback(() => {
+    liveFollowRef.current = false;
+    setLiveFollowEnabled(false);
+    if (!isAtEndRef.current) setShowScrollToEnd(true);
+  }, []);
+  const onIsAtEndChange = useCallback((isAtEnd: boolean) => {
+    if (isAtEndRef.current === isAtEnd) return;
+    isAtEndRef.current = isAtEnd;
+    if (isAtEnd) {
+      liveFollowRef.current = true;
+      setLiveFollowEnabled(true);
+      setShowScrollToEnd(false);
+      composerRef.current?.restoreAfterTimelineReachedEnd();
+      return;
+    }
+    if (!liveFollowRef.current) setShowScrollToEnd(true);
+  }, []);
+  const scrollToEnd = useCallback(() => {
+    isAtEndRef.current = true;
+    liveFollowRef.current = true;
+    setLiveFollowEnabled(true);
+    setShowScrollToEnd(false);
+    composerRef.current?.restoreAfterTimelineReachedEnd();
+    requestAnimationFrame(() => {
+      void listRef.current?.scrollToEnd?.({ animated: true });
+    });
+  }, []);
   const scheduleComposerFocus = useCallback(() => {
     requestAnimationFrame(() => composerRef.current?.focusAtEnd());
   }, []);
@@ -519,7 +558,7 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
         <p className="min-w-0 flex-1 truncate text-sm font-medium">Reply thread</p>
       </div>
 
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
         {timelineEntries.length === 0 && !isWorking ? (
           <div className="flex h-full items-center justify-center px-6 text-center">
             <p className="text-placeholder text-sm">
@@ -552,24 +591,36 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
             anchorMessageId={null}
             onAnchorReady={NOOP}
             contentInsetEndAdjustment={0}
-            liveFollowEnabled
-            onIsAtEndChange={NOOP}
-            onManualNavigation={NOOP}
+            liveFollowEnabled={liveFollowEnabled}
+            onIsAtEndChange={onIsAtEndChange}
+            onContentOverflowChange={setTimelineOverflows}
+            onManualNavigation={onManualNavigation}
             hideEmptyPlaceholder
           />
         )}
+        {showScrollToEnd ? (
+          <div className="pointer-events-none absolute bottom-1 left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5">
+            <Button
+              aria-label="Scroll to end"
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={scrollToEnd}
+              className="pointer-events-auto gap-1.5 rounded-full px-3 text-muted-foreground hover:text-foreground"
+              size="xs"
+              variant="glass"
+            >
+              <ChevronDownIcon className="size-3.5" />
+              Scroll to end
+            </Button>
+          </div>
+        ) : null}
       </div>
 
-      <div
-        className="flex shrink-0 flex-col px-3 pt-1.5 sm:px-5 sm:pt-2"
-        style={mainComposerHeight > 0 ? { minHeight: mainComposerHeight } : undefined}
-      >
+      <div className="flex shrink-0 flex-col px-3 pt-1.5 pb-3 sm:px-5 sm:pt-2 sm:pb-4">
         {sendError !== null ? (
           <p className="px-2 pb-1 text-xs text-destructive">{sendError}</p>
         ) : null}
-        {/* Same visual shell that wraps the main thread's composer. */}
-        <div className="chat-composer-glass-shell relative mx-auto w-full max-w-3xl">
-          <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
+        <ComposerSurface.Shell>
+          <ComposerSurface.Host>
             <ChatComposer
               variant="reply"
               {...(messages.length > 0 ? { promptPlaceholder: "Reply..." } : {})}
@@ -607,9 +658,9 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
               restingControlsHost={null}
               restingControlsHaveLeadingContext={false}
               onRestingControlsVisibilityChange={NOOP}
-              getTimelineScrollableNode={() => null}
-              isTimelineAtLogicalEnd={() => true}
-              timelineOverflows={false}
+              getTimelineScrollableNode={getTimelineScrollableNode}
+              isTimelineAtLogicalEnd={isTimelineAtLogicalEnd}
+              timelineOverflows={timelineOverflows}
               onComposerOverlayHeightChange={NOOP}
               onRestingChange={NOOP}
               composerFilesRef={composerFilesRef}
@@ -672,8 +723,8 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
               setThreadError={setThreadError}
               onExpandImage={NOOP}
             />
-          </div>
-        </div>
+          </ComposerSurface.Host>
+        </ComposerSurface.Shell>
       </div>
     </div>
   );

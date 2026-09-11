@@ -8399,7 +8399,6 @@ export default function ChatView(props: ChatViewProps) {
         resolvedTheme={resolvedTheme}
         markdownCwd={gitCwd ?? undefined}
         workspaceRoot={activeWorkspaceRoot}
-        mainComposerHeight={composerOverlayHeight}
       />
     ) : (renderedRightPanelSurface?.kind === "files" ||
         renderedRightPanelSurface?.kind === "file") &&

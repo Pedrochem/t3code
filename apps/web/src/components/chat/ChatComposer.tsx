@@ -3867,14 +3867,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerSubmissionError !== null ||
     providerInputSubmissionError !== null ||
     hasImageAttachmentAttention;
-  const isComposerResting = shouldUseRestingComposerLayout({
-    isExistingThread: routeKind === "server" && activeThreadId !== null,
-    isMobileViewport,
-    isScrollCollapsed: isComposerScrollCollapsed,
-    hasExpandedChrome: composerHasExpandedChrome,
-    hasMultilinePrompt,
-    timelineOverflows,
-  });
+  // The reply variant has no footer controls to reveal, so it keeps the
+  // resting row whenever a single line fits and expands only for multiline
+  // drafts or extra chrome, instead of waiting for a timeline scroll.
+  const isComposerResting =
+    variant === "reply"
+      ? !isMobileViewport && !hasMultilinePrompt && !composerHasExpandedChrome
+      : shouldUseRestingComposerLayout({
+          isExistingThread: routeKind === "server" && activeThreadId !== null,
+          isMobileViewport,
+          isScrollCollapsed: isComposerScrollCollapsed,
+          hasExpandedChrome: composerHasExpandedChrome,
+          hasMultilinePrompt,
+          timelineOverflows,
+        });
   const expandedComposerImages = isComposerResting
     ? standaloneComposerImages.filter((image) => pendingSnapShotIdSet.has(image.id))
     : standaloneComposerImages;
