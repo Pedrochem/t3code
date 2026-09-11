@@ -850,6 +850,8 @@ import {
   PencilRulerIcon,
   PlayIcon,
   type LucideIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   LockIcon,
   LockOpenIcon,
   PenLineIcon,
@@ -1256,6 +1258,10 @@ export interface ChatComposerProps {
   /** Replaces only the idle "Ask anything" placeholder; state-specific
    * placeholders (approvals, pending questions) keep precedence. */
   promptPlaceholder?: string;
+  /** Whether the host hid the resting controls strip below the composer. */
+  contextStripCollapsed?: boolean;
+  /** Shows the strip toggle in the resting row; omitted where there is no strip. */
+  onToggleContextStrip?: () => void;
 
   // Thread context
   activeThreadId: ThreadId | null;
@@ -1411,6 +1417,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     draftId,
     variant = "thread",
     promptPlaceholder,
+    contextStripCollapsed = false,
+    onToggleContextStrip,
     activeThreadId,
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
     activeThread,
@@ -3869,6 +3877,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const isComposerResting =
     !isMobileViewport &&
     (variant === "reply" || (routeKind === "server" && activeThreadId !== null));
+  const showContextStripToggle = isComposerResting && onToggleContextStrip !== undefined;
   const expandedComposerImages = isComposerResting
     ? standaloneComposerImages.filter((image) => pendingSnapShotIdSet.has(image.id))
     : standaloneComposerImages;
@@ -5655,10 +5664,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   isComposerResting &&
                     ((settings.contextWindowMeterEnabled && activeContextWindow) ||
                     reserveContextWindowMeter
-                      ? "pr-28"
+                      ? showContextStripToggle
+                        ? "pr-36"
+                        : "pr-28"
                       : showComposerAttachAction
-                        ? "pr-20"
-                        : "pr-12"),
+                        ? showContextStripToggle
+                          ? "pr-28"
+                          : "pr-20"
+                        : showContextStripToggle
+                          ? "pr-20"
+                          : "pr-12"),
                 )}
               >
                 <ComposerPromptEditor
@@ -5793,6 +5808,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
+                  {showContextStripToggle ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            onPointerDown={(event) => event.preventDefault()}
+                            onClick={onToggleContextStrip}
+                            aria-label={contextStripCollapsed ? "Show controls" : "Hide controls"}
+                            aria-expanded={!contextStripCollapsed}
+                          />
+                        }
+                      >
+                        {contextStripCollapsed ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                      </TooltipTrigger>
+                      <TooltipPopup>
+                        {contextStripCollapsed ? "Show controls" : "Hide controls"}
+                      </TooltipPopup>
+                    </Tooltip>
+                  ) : null}
                   {showComposerAttachAction ? (
                     <>
                       <input

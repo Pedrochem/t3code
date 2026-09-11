@@ -82,6 +82,12 @@ interface ReplyThreadPanelProps {
   resolvedTheme: "light" | "dark";
   markdownCwd: string | undefined;
   workspaceRoot: string | undefined;
+  /**
+   * Measured height of the main pane's composer overlay. The panel reserves
+   * the same height with its composer at the top, so both boxes share a top
+   * edge across the divider.
+   */
+  mainComposerHeight: number;
 }
 
 export const ReplyThreadPanel = memo(function ReplyThreadPanel({
@@ -93,6 +99,7 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
   resolvedTheme,
   markdownCwd,
   workspaceRoot,
+  mainComposerHeight,
 }: ReplyThreadPanelProps) {
   const parentRef = useMemo(
     () => scopeThreadRef(environmentId, parentThread.id),
@@ -613,7 +620,10 @@ export const ReplyThreadPanel = memo(function ReplyThreadPanel({
         ) : null}
       </div>
 
-      <div className="flex shrink-0 flex-col px-3 pt-1.5 pb-3 sm:px-5 sm:pt-2 sm:pb-4">
+      <div
+        className="flex shrink-0 flex-col px-3 pt-1.5 pb-3 sm:px-5 sm:pt-2 sm:pb-4"
+        style={mainComposerHeight > 0 ? { minHeight: mainComposerHeight } : undefined}
+      >
         {sendError !== null ? (
           <p className="px-2 pb-1 text-xs text-destructive">{sendError}</p>
         ) : null}

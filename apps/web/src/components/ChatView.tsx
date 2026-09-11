@@ -564,6 +564,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
 
   return [attachTransitionGroupRef, attachComposerAnchorRef, captureComposerRect] as const;
 }
+const COMPOSER_CONTEXT_STRIP_COLLAPSED_KEY = "t3code:composer-context-strip-collapsed:v1";
 const PreviewPanel = lazy(() =>
   import("./preview/PreviewPanel").then((module) => ({ default: module.PreviewPanel })),
 );
@@ -1596,6 +1597,14 @@ export default function ChatView(props: ChatViewProps) {
   const [restingComposerControlsHost, setRestingComposerControlsHost] =
     useState<HTMLDivElement | null>(null);
   const [restingComposerControlsVisible, setRestingComposerControlsVisible] = useState(false);
+  const [composerContextStripCollapsed, setComposerContextStripCollapsed] = useLocalStorage(
+    COMPOSER_CONTEXT_STRIP_COLLAPSED_KEY,
+    false,
+    Schema.Boolean,
+  );
+  const toggleComposerContextStrip = useCallback(() => {
+    setComposerContextStripCollapsed((collapsed) => !collapsed);
+  }, [setComposerContextStripCollapsed]);
   const citeAssistantText = useCallback(
     (citation: AssistantCitation, sourceAnchor: AssistantCitationSourceAnchor) => {
       const inserted = composerRef.current?.citeAssistantText(citation, sourceAnchor) ?? false;
@@ -3462,12 +3471,14 @@ export default function ChatView(props: ChatViewProps) {
     showEnvironmentIndicator: showComposerEnvironmentIndicator,
     hostsRestingComposerControls: routeKind === "server",
   });
-  const showComposerContextStrip = shouldShowComposerContextStrip({
-    hasActiveProject: activeProject !== null,
-    isGitRepo,
-    showEnvironmentIndicator: showComposerEnvironmentIndicator,
-    hostsRestingComposerControls: routeKind === "server" && restingComposerControlsVisible,
-  });
+  const showComposerContextStrip =
+    !composerContextStripCollapsed &&
+    shouldShowComposerContextStrip({
+      hasActiveProject: activeProject !== null,
+      isGitRepo,
+      showEnvironmentIndicator: showComposerEnvironmentIndicator,
+      hostsRestingComposerControls: routeKind === "server" && restingComposerControlsVisible,
+    });
   const initialDiffPanelGitScope =
     gitStatusQuery.data?.hasWorkingTreeChanges === true ? "unstaged" : "branch";
   const diffPanelGitStatusResolutionKey = gitStatusQuery.data ? "resolved" : "pending";
@@ -8387,6 +8398,7 @@ export default function ChatView(props: ChatViewProps) {
         environmentId={activeThread.environmentId}
         parentThread={activeThread}
         target={renderedRightPanelSurface}
+        mainComposerHeight={composerOverlayHeight}
         onThreadCreated={(createdThreadId) => {
           if (!activeThreadRef || renderedRightPanelSurface.kind !== "reply-thread") return;
           openReplyThreadSurface(activeThreadRef, {
@@ -8789,6 +8801,8 @@ export default function ChatView(props: ChatViewProps) {
                             terminalOpen={Boolean(terminalUiState.terminalOpen)}
                             gitCwd={gitCwd}
                             restingControlsHost={restingComposerControlsHost}
+                            contextStripCollapsed={composerContextStripCollapsed}
+                            onToggleContextStrip={toggleComposerContextStrip}
                             restingControlsHaveLeadingContext={
                               isGitRepo || showComposerEnvironmentIndicator
                             }
