@@ -1614,8 +1614,14 @@ export default function ChatView(props: ChatViewProps) {
     contextStripObserverRef.current?.disconnect();
     contextStripObserverRef.current = null;
     if (!element) return;
+    // The strip overlaps the composer host by its negative top margin, which
+    // collapses through this wrapper, so its own height overstates what it
+    // adds below the host. Measure from the host's bottom edge instead.
     const measure = () => {
-      const height = Math.ceil(element.getBoundingClientRect().height);
+      const host = element.parentElement?.previousElementSibling;
+      const hostBottom =
+        host?.getBoundingClientRect().bottom ?? element.getBoundingClientRect().top;
+      const height = Math.ceil(element.getBoundingClientRect().bottom - hostBottom);
       if (height > 0) setContextStripHeight(height);
     };
     measure();
