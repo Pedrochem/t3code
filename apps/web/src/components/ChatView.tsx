@@ -1605,6 +1605,24 @@ export default function ChatView(props: ChatViewProps) {
   const toggleComposerContextStrip = useCallback(() => {
     setComposerContextStripCollapsed((collapsed) => !collapsed);
   }, [setComposerContextStripCollapsed]);
+  // Last visible height of the controls strip. While the strip is hidden a
+  // spacer keeps that height below the composer, so hiding folds the strip
+  // away without the input row dropping to the bottom of the overlay.
+  const [contextStripHeight, setContextStripHeight] = useState(0);
+  const contextStripObserverRef = useRef<ResizeObserver | null>(null);
+  const attachContextStripElement = useCallback((element: HTMLDivElement | null) => {
+    contextStripObserverRef.current?.disconnect();
+    contextStripObserverRef.current = null;
+    if (!element) return;
+    const measure = () => {
+      const height = Math.ceil(element.getBoundingClientRect().height);
+      if (height > 0) setContextStripHeight(height);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    contextStripObserverRef.current = observer;
+  }, []);
   const citeAssistantText = useCallback(
     (citation: AssistantCitation, sourceAnchor: AssistantCitationSourceAnchor) => {
       const inserted = composerRef.current?.citeAssistantText(citation, sourceAnchor) ?? false;
@@ -8855,7 +8873,7 @@ export default function ChatView(props: ChatViewProps) {
                           className="relative z-0"
                         >
                           {mountComposerContextStrip && (
-                            <div className="pointer-events-auto">
+                            <div ref={attachContextStripElement} className="pointer-events-auto">
                               <BranchToolbar
                                 environmentId={activeThread.environmentId}
                                 threadId={activeThread.id}
@@ -8895,6 +8913,11 @@ export default function ChatView(props: ChatViewProps) {
                               />
                             </div>
                           )}
+                          {mountComposerContextStrip &&
+                          composerContextStripCollapsed &&
+                          contextStripHeight > 0 ? (
+                            <div aria-hidden style={{ height: contextStripHeight }} />
+                          ) : null}
                         </div>
                       </div>
                     </ComposerSurface.Shell>
