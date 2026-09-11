@@ -214,6 +214,16 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
     `,
   });
 
+  const countUserMessagesRow = SqlSchema.findOne({
+    Request: ListProjectionThreadMessagesInput,
+    Result: Schema.Struct({ count: Schema.Number }),
+    execute: ({ threadId }) => sql`
+      SELECT COUNT(*) AS "count"
+      FROM projection_thread_messages
+      WHERE thread_id = ${threadId} AND role = 'user'
+    `,
+  });
+
   const deleteProjectionThreadMessageRows = SqlSchema.void({
     Request: DeleteProjectionThreadMessagesInput,
     execute: ({ threadId }) =>
@@ -272,6 +282,17 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
       Effect.map((row) => row.latestUserMessageAt),
     );
 
+  const countUserMessagesByThreadId: ProjectionThreadMessageRepositoryShape["countUserMessagesByThreadId"] =
+    (input) =>
+      countUserMessagesRow(input).pipe(
+        Effect.mapError(
+          toPersistenceSqlError(
+            "ProjectionThreadMessageRepository.countUserMessagesByThreadId:query",
+          ),
+        ),
+        Effect.map((row) => row.count),
+      );
+
   const deleteByThreadId: ProjectionThreadMessageRepositoryShape["deleteByThreadId"] = (input) =>
     deleteProjectionThreadMessageRows(input).pipe(
       Effect.mapError(
@@ -286,6 +307,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
     hasAssistantMessageForTurn,
     listByThreadId,
     getLatestUserMessageAt,
+    countUserMessagesByThreadId,
     deleteByThreadId,
   } satisfies ProjectionThreadMessageRepositoryShape;
 });

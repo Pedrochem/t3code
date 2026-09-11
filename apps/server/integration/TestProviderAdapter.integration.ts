@@ -483,6 +483,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       provider,
       capabilities: {
         sessionModelSwitch: "in-session",
+        sessionFork: "unsupported",
       },
       startSession,
       sendTurn,
@@ -494,6 +495,14 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       hasSession,
       readThread,
       rollbackThread,
+      forkSession: () =>
+        Effect.fail(
+          new ProviderAdapterValidationError({
+            provider,
+            operation: "forkSession",
+            issue: "Session forking is not supported by the test adapter.",
+          }),
+        ),
       stopAll,
       streamEvents: Stream.fromQueue(runtimeEvents),
     };

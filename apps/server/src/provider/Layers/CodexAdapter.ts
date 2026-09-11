@@ -2715,6 +2715,9 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     capabilities: {
       sessionModelSwitch: "in-session",
       promptlessTurnContinuation: true,
+      // Codex has a native thread/fork primitive; wiring it up is a planned
+      // follow-up (docs/internals/reply-threads.md).
+      sessionFork: "unsupported",
     },
     startSession,
     sendTurn,
@@ -2723,6 +2726,14 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     readThread,
     rollbackThread,
     uploadFeedback,
+    forkSession: () =>
+      Effect.fail(
+        new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "forkSession",
+          issue: "Session forking is not supported by this provider yet.",
+        }),
+      ),
     respondToRequest,
     respondToUserInput,
     stopSession,

@@ -810,6 +810,16 @@ const make = Effect.gen(function* () {
           ...(thread.title ? { title: thread.title } : {}),
           modelSelection: desiredModelSelection,
           ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
+          // Reply threads: seeds the first session start by forking the parent
+          // conversation at the anchor turn. Ignored once a cursor exists.
+          ...(thread.parentThreadId != null && thread.anchorTurnId != null
+            ? {
+                forkFrom: {
+                  parentThreadId: thread.parentThreadId,
+                  anchorTurnId: thread.anchorTurnId,
+                },
+              }
+            : {}),
           runtimeMode: desiredRuntimeMode,
         })
         .pipe(Effect.tap(() => refreshWorkspaceSnapshot));

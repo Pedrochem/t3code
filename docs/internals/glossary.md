@@ -16,6 +16,8 @@ Terms whose meaning matters across T3 Code. Architecture and lifecycle constrain
 | Turn           | One user-to-agent work cycle. Provider work can finish before checkpoint and diff work settles.   |
 | Activity       | A non-message timeline item, such as a tool action, approval, or failure.                         |
 | T3 home        | The base data directory. Runtime state normally lives under its `userdata` directory.             |
+| Reply thread | A conversation fork inside a thread, modeled on Slack reply threads. A regular thread whose provider session is forked from a parent thread at an anchor turn, sharing the parent workspace, branch, and worktree. Hidden from thread lists, depth one, and archived or deleted with its parent. See [reply-threads.md](./reply-threads.md). |
+| Anchor turn | The completed turn in a parent thread from which a reply thread was forked. Each anchor turn has at most one reply thread. Reverting the parent past an anchor turn deletes the reply thread anchored there. |
 
 ## Orchestration
 

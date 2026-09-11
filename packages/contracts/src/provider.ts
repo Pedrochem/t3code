@@ -60,6 +60,15 @@ export const ProviderSessionStartInput = Schema.Struct({
   title: Schema.optional(TrimmedNonEmptyString),
   modelSelection: Schema.optional(ModelSelection),
   resumeCursor: Schema.optional(Schema.Unknown),
+  // Reply threads: when no resume cursor exists anywhere for this thread, the
+  // session is seeded by forking the parent thread's conversation at the
+  // anchor turn. Ignored once a cursor is persisted.
+  forkFrom: Schema.optional(
+    Schema.Struct({
+      parentThreadId: ThreadId,
+      anchorTurnId: TurnId,
+    }),
+  ),
   approvalPolicy: Schema.optional(ProviderApprovalPolicy),
   sandboxMode: Schema.optional(ProviderSandboxMode),
   runtimeMode: RuntimeMode,

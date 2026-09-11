@@ -449,6 +449,7 @@ it.effect.each(["opt-in desktop restart", "marked remote update"] as const)(
             getCapabilities: () =>
               Effect.succeed({
                 sessionModelSwitch: "in-session",
+                sessionFork: "unsupported",
                 promptlessTurnContinuation: true,
               }),
             sendTurn: (input) =>

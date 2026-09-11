@@ -1462,13 +1462,46 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         }
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
         yield* clearTurnAnalyticsSession(resolvedInstanceId, threadId);
+        // Reply threads: with no cursor anywhere, seed the session by forking
+        // the parent conversation at the anchor turn. A persisted or requested
+        // cursor always wins, so this only runs on the child's first start.
+        let seededResumeCursor = effectiveResumeCursor;
+        if (seededResumeCursor === undefined && input.forkFrom !== undefined) {
+          if (adapter.capabilities.sessionFork !== "native") {
+            return yield* toValidationError(
+              "ProviderService.startSession",
+              `Provider '${resolvedProvider}' does not support forking sessions for reply threads.`,
+            );
+          }
+          const parentBinding = Option.getOrUndefined(
+            yield* directory.getBinding(input.forkFrom.parentThreadId),
+          );
+          if (parentBinding?.resumeCursor === undefined || parentBinding.resumeCursor === null) {
+            return yield* toValidationError(
+              "ProviderService.startSession",
+              `Cannot fork thread '${input.forkFrom.parentThreadId}' because no provider resume state is persisted for it.`,
+            );
+          }
+          if (parentBinding.providerInstanceId !== resolvedInstanceId) {
+            return yield* toValidationError(
+              "ProviderService.startSession",
+              `Reply thread '${threadId}' must use its parent's provider instance '${parentBinding.providerInstanceId}'.`,
+            );
+          }
+          seededResumeCursor = yield* adapter.forkSession({
+            parentThreadId: input.forkFrom.parentThreadId,
+            childThreadId: threadId,
+            anchorTurnId: input.forkFrom.anchorTurnId,
+            parentResumeCursor: parentBinding.resumeCursor,
+          });
+        }
         yield* prepareMcpSession(threadId, resolvedInstanceId);
         const session = yield* adapter
           .startSession({
             ...input,
             providerInstanceId: resolvedInstanceId,
             ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
-            ...(effectiveResumeCursor !== undefined ? { resumeCursor: effectiveResumeCursor } : {}),
+            ...(seededResumeCursor !== undefined ? { resumeCursor: seededResumeCursor } : {}),
           })
           .pipe(Effect.onError(() => clearMcpSession(threadId)));
 

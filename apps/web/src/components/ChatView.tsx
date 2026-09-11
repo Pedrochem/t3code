@@ -322,6 +322,7 @@ import {
   useThread,
   useThreadRefs,
   useThreadShell,
+  useThreadShells,
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
@@ -329,7 +330,8 @@ import { createPageScrollController, type PageScrollKey } from "./chat/pageScrol
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
-import { MessagesTimeline } from "./chat/MessagesTimeline";
+import { MessagesTimeline, type ReplyThreadAnchorInfo } from "./chat/MessagesTimeline";
+import { ReplyThreadPanel } from "./ReplyThreadPanel";
 import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
 import { resolveComposerTimelineInset, resolveScrollToEndClearance } from "./composerFooterLayout";
@@ -2661,6 +2663,68 @@ export default function ChatView(props: ChatViewProps) {
   const { approvals: pendingApprovals, userInputs: pendingUserInputs } = useMemo(
     () => derivePendingRequests(threadActivities),
     [threadActivities],
+  );
+  const threadShells = useThreadShells();
+  const replyThreadChildren = useMemo(
+    () =>
+      activeThread != null && isServerThread
+        ? threadShells.filter(
+            (shell) =>
+              shell.environmentId === activeThread.environmentId &&
+              shell.parentThreadId === activeThread.id,
+          )
+        : [],
+    [activeThread, isServerThread, threadShells],
+  );
+  // Chips key off the anchor turn's LAST assistant message so a multi-message
+  // turn renders exactly one chip. Derived from messages, not checkpoint
+  // summaries: projects without git never record checkpoints.
+  const replyThreadAnchorsByMessageId = useMemo(() => {
+    const anchors = new Map<MessageId, ReplyThreadAnchorInfo>();
+    if (activeThread == null || replyThreadChildren.length === 0) return anchors;
+    const childrenByAnchorTurnId = new Map(
+      replyThreadChildren.flatMap((shell) =>
+        shell.anchorTurnId != null ? [[shell.anchorTurnId, shell] as const] : [],
+      ),
+    );
+    const lastAssistantMessageIdByTurnId = new Map<TurnId, MessageId>();
+    for (const message of activeThread.messages) {
+      if (message.role !== "assistant" || message.turnId === null) continue;
+      if (!childrenByAnchorTurnId.has(message.turnId)) continue;
+      lastAssistantMessageIdByTurnId.set(message.turnId, message.id);
+    }
+    for (const [turnId, messageId] of lastAssistantMessageIdByTurnId) {
+      const child = childrenByAnchorTurnId.get(turnId);
+      if (!child) continue;
+      anchors.set(messageId, {
+        turnId,
+        threadId: child.id,
+        interactionCount: child.interactionCount ?? 0,
+        updatedAt: child.updatedAt,
+      });
+    }
+    return anchors;
+  }, [activeThread, replyThreadChildren]);
+  // Reply threads fork the provider session, which only the Claude driver
+  // supports today. Hidden inside reply threads themselves (depth 1).
+  const replyThreadsSupported =
+    isServerThread &&
+    activeThread != null &&
+    activeThread.parentThreadId == null &&
+    providerInstanceEntries.find(
+      (entry) => entry.instanceId === activeThread.modelSelection.instanceId,
+    )?.driverKind === "claudeAgent";
+  const openReplyThreadSurface = useRightPanelStore((state) => state.openReplyThread);
+  const handleOpenReplyThread = useCallback(
+    (turnId: TurnId) => {
+      if (!activeThreadRef) return;
+      const existing = replyThreadChildren.find((shell) => shell.anchorTurnId === turnId);
+      openReplyThreadSurface(activeThreadRef, {
+        anchorTurnId: turnId,
+        threadId: existing?.id ?? null,
+      });
+    },
+    [activeThreadRef, openReplyThreadSurface, replyThreadChildren],
   );
   const activePendingUserInput = pendingUserInputs[0] ?? null;
   const activePendingRequestKey = JSON.stringify([
@@ -8318,6 +8382,25 @@ export default function ChatView(props: ChatViewProps) {
           }}
         />
       </Suspense>
+    ) : renderedRightPanelSurface?.kind === "reply-thread" && activeThread && isServerThread ? (
+      <ReplyThreadPanel
+        key={`${activeThreadKey}:${renderedRightPanelSurface.anchorTurnId}`}
+        environmentId={activeThread.environmentId}
+        parentThread={activeThread}
+        target={renderedRightPanelSurface}
+        onThreadCreated={(createdThreadId) => {
+          if (!activeThreadRef || renderedRightPanelSurface.kind !== "reply-thread") return;
+          openReplyThreadSurface(activeThreadRef, {
+            anchorTurnId: renderedRightPanelSurface.anchorTurnId,
+            threadId: createdThreadId,
+          });
+        }}
+        timestampFormat={timestampFormat}
+        resolvedTheme={resolvedTheme}
+        markdownCwd={gitCwd ?? undefined}
+        workspaceRoot={activeWorkspaceRoot}
+        mainComposerHeight={composerOverlayHeight}
+      />
     ) : (renderedRightPanelSurface?.kind === "files" ||
         renderedRightPanelSurface?.kind === "file") &&
       ((activeProject && activeWorkspaceRoot) ||
@@ -8522,6 +8605,8 @@ export default function ChatView(props: ChatViewProps) {
                 routeThreadKey={displayedTimelineKey}
                 displayThreadKey={displayedTimelineKey}
                 onOpenTurnDiff={paintOnlyDisplayedTimeline ? noopHeldTurnDiff : onOpenTurnDiff}
+                onOpenReplyThread={replyThreadsSupported ? handleOpenReplyThread : null}
+                replyThreadAnchorsByMessageId={replyThreadAnchorsByMessageId}
                 supportsConversationRollback={
                   !paintOnlyDisplayedTimeline && supportsConversationRollback
                 }

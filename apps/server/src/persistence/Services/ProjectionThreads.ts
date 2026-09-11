@@ -48,9 +48,13 @@ export const ProjectionThread = Schema.Struct({
   pinnedAt: Schema.NullOr(IsoDateTime),
   pinOrderKey: Schema.optional(Schema.NullOr(Schema.String)),
   activeOrderKey: Schema.optional(Schema.NullOr(Schema.String)),
+  parentThreadId: Schema.optional(Schema.NullOr(ThreadId)),
+  anchorTurnId: Schema.optional(Schema.NullOr(TurnId)),
   titleRegenerationRequestId: Schema.optional(Schema.NullOr(CommandId)),
   titleRegenerationStartedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
+  // User to assistant exchanges; drives the reply thread chip's count.
+  interactionCount: Schema.optional(Schema.NullOr(NonNegativeInt)),
   pendingApprovalCount: NonNegativeInt,
   pendingUserInputCount: NonNegativeInt,
   hasActionableProposedPlan: NonNegativeInt,

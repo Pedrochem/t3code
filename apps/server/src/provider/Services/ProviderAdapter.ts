@@ -41,6 +41,7 @@ export type ProviderCompaction<TError> =
       ) => Effect.Effect<void, TError>;
     }
   | { readonly type: "slash-command"; readonly command: `/${string}` };
+export type ProviderSessionForkMode = "native" | "unsupported";
 
 export interface ProviderAdapterCapabilities {
   /**
@@ -52,6 +53,11 @@ export interface ProviderAdapterCapabilities {
   readonly promptlessTurnContinuation?: boolean;
   /** False when native conversation history cannot be rewound. */
   readonly supportsConversationRollback?: boolean;
+  /**
+   * Declares whether forking a session at a past turn is supported. Reply
+   * threads are only offered on providers that report "native".
+   */
+  readonly sessionFork: ProviderSessionForkMode;
 }
 
 export interface ProviderThreadTurnSnapshot {
@@ -145,6 +151,19 @@ export interface ProviderAdapterShape<TError> {
   readonly uploadFeedback?: (
     input: ProviderUploadFeedbackInput,
   ) => Effect.Effect<ProviderUploadFeedbackResult, TError>;
+
+  /**
+   * Fork the parent thread's conversation at an anchor turn, returning the
+   * resume cursor that seeds the reply thread's session. Must not mutate the
+   * parent session; the fork may be realized lazily on the child's first
+   * session start.
+   */
+  readonly forkSession: (input: {
+    readonly parentThreadId: ThreadId;
+    readonly childThreadId: ThreadId;
+    readonly anchorTurnId: TurnId;
+    readonly parentResumeCursor: unknown;
+  }) => Effect.Effect<unknown, TError>;
 
   /**
    * Stop all sessions owned by this adapter.

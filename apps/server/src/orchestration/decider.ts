@@ -35,10 +35,13 @@ import {
   type OrchestrationCommandRejection,
 } from "./Errors.ts";
 import {
+  findThreadById,
+  listActiveReplyThreads,
   listThreadsByProjectId,
   requireActiveProjectWorkspaceRootAbsent,
   requireProject,
   requireProjectAbsent,
+  requireReplyThreadCreatable,
   requireThread,
   requireThreadArchived,
   requireThreadAbsent,
@@ -375,6 +378,23 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const parentThreadId = command.parentThreadId ?? null;
+      const anchorTurnId = command.anchorTurnId ?? null;
+      if ((parentThreadId === null) !== (anchorTurnId === null)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "parentThreadId and anchorTurnId must be provided together.",
+        });
+      }
+      if (parentThreadId !== null && anchorTurnId !== null) {
+        yield* requireReplyThreadCreatable({
+          readModel,
+          command,
+          projectId: command.projectId,
+          parentThreadId,
+          anchorTurnId,
+        });
+      }
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -393,6 +413,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
+          ...(parentThreadId !== null && anchorTurnId !== null
+            ? { parentThreadId, anchorTurnId }
+            : {}),
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -405,6 +428,28 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      // Reply threads are unreachable outside their parent, so deleting a
+      // parent cascades to them (docs/internals/reply-threads.md).
+      const replyThreadsToDelete = listActiveReplyThreads(readModel, command.threadId);
+      if (replyThreadsToDelete.length > 0) {
+        return yield* decideCommandSequence({
+          readModel,
+          commands: [
+            ...replyThreadsToDelete.map(
+              (reply): Extract<OrchestrationCommand, { type: "thread.delete" }> => ({
+                type: "thread.delete",
+                commandId: command.commandId,
+                threadId: reply.id,
+              }),
+            ),
+            {
+              type: "thread.delete",
+              commandId: command.commandId,
+              threadId: command.threadId,
+            },
+          ],
+        });
+      }
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -427,6 +472,28 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const replyThreadsToArchive = listActiveReplyThreads(readModel, command.threadId).filter(
+        (reply) => reply.archivedAt === null,
+      );
+      if (replyThreadsToArchive.length > 0) {
+        return yield* decideCommandSequence({
+          readModel,
+          commands: [
+            ...replyThreadsToArchive.map(
+              (reply): Extract<OrchestrationCommand, { type: "thread.archive" }> => ({
+                type: "thread.archive",
+                commandId: command.commandId,
+                threadId: reply.id,
+              }),
+            ),
+            {
+              type: "thread.archive",
+              commandId: command.commandId,
+              threadId: command.threadId,
+            },
+          ],
+        });
+      }
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -450,6 +517,30 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      // Reply threads only ever archive through the parent cascade, so the
+      // way back out cascades too.
+      const replyThreadsToUnarchive = listActiveReplyThreads(readModel, command.threadId).filter(
+        (reply) => reply.archivedAt !== null,
+      );
+      if (replyThreadsToUnarchive.length > 0) {
+        return yield* decideCommandSequence({
+          readModel,
+          commands: [
+            ...replyThreadsToUnarchive.map(
+              (reply): Extract<OrchestrationCommand, { type: "thread.unarchive" }> => ({
+                type: "thread.unarchive",
+                commandId: command.commandId,
+                threadId: reply.id,
+              }),
+            ),
+            {
+              type: "thread.unarchive",
+              commandId: command.commandId,
+              threadId: command.threadId,
+            },
+          ],
+        });
+      }
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -1641,11 +1732,27 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.checkpoint.revert": {
-      yield* requireThread({
+      const revertTarget = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
+      // Restoring files under a live agent is never safe, and reply threads
+      // share the parent workspace, so the whole family must be idle.
+      const familyRoot =
+        (revertTarget.parentThreadId != null
+          ? findThreadById(readModel, revertTarget.parentThreadId)
+          : undefined) ?? revertTarget;
+      const family = [familyRoot, ...listActiveReplyThreads(readModel, familyRoot.id)];
+      const activeMember = family.find(
+        (member) => member.session?.status === "starting" || member.session?.status === "running",
+      );
+      if (activeMember) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread '${command.threadId}' cannot revert while thread '${activeMember.id}' in the same workspace has an active turn.`,
+        });
+      }
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -1943,11 +2050,36 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.revert.complete": {
-      yield* requireThread({
+      const revertedThread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
+      // Reply threads anchored to discarded turns lose the history they hang
+      // off; the revert cascades a delete to them.
+      const discardedTurnIds = new Set(
+        revertedThread.checkpoints
+          .filter((checkpoint) => checkpoint.checkpointTurnCount > command.turnCount)
+          .map((checkpoint) => checkpoint.turnId),
+      );
+      const orphanedReplyThreads = listActiveReplyThreads(readModel, command.threadId).filter(
+        (reply) => reply.anchorTurnId != null && discardedTurnIds.has(reply.anchorTurnId),
+      );
+      if (orphanedReplyThreads.length > 0) {
+        return yield* decideCommandSequence({
+          readModel,
+          commands: [
+            ...orphanedReplyThreads.map(
+              (reply): Extract<OrchestrationCommand, { type: "thread.delete" }> => ({
+                type: "thread.delete",
+                commandId: command.commandId,
+                threadId: reply.id,
+              }),
+            ),
+            { ...command },
+          ],
+        });
+      }
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",

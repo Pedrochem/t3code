@@ -1248,6 +1248,15 @@ export interface ChatComposerProps {
   routeKind: "server" | "draft";
   routeThreadRef: ScopedThreadRef;
   draftId: DraftId | null;
+  /**
+   * "reply" is the same composer with the reply thread's locked controls
+   * hidden: no model picker, extras menu, or mode toggles. The context
+   * meter and send cluster stay (docs/internals/reply-threads.md).
+   */
+  variant?: "thread" | "reply";
+  /** Replaces only the idle "Ask anything" placeholder; state-specific
+   * placeholders (approvals, pending questions) keep precedence. */
+  promptPlaceholder?: string;
 
   // Thread context
   activeThreadId: ThreadId | null;
@@ -1403,6 +1412,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     routeKind,
     routeThreadRef,
     draftId,
+    variant = "thread",
+    promptPlaceholder,
     activeThreadId,
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
     activeThread,
@@ -4112,7 +4123,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       <CircleAlertIcon className="size-4" />
       {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
     </Button>
-  ) : (
+  ) : variant === "reply" ? null : (
     <>
       {composerControlsInStrip && restingControlsHaveLeadingContext ? (
         <ComposerControlSeparator
@@ -5707,7 +5718,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               ? "Enable a provider in Settings to send a message"
                               : phase === "disconnected"
                                 ? DISCONNECTED_COMPOSER_PLACEHOLDER
-                                : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                                : (promptPlaceholder ??
+                                  "Ask anything, @tag files/folders, $use skills, or / for commands")
                   }
                   disabled={
                     isConnecting ||

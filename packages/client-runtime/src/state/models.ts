@@ -20,6 +20,15 @@ export interface EnvironmentThread extends OrchestrationThread {
   readonly environmentId: EnvironmentId;
 }
 
+/**
+ * Reply threads never appear in thread lists, palettes, or counts; they are
+ * reached through the chip on their anchor turn. Every list surface filters
+ * with this so hiding stays consistent (docs/internals/reply-threads.md).
+ */
+export function isTopLevelThreadShell(shell: OrchestrationThreadShell): boolean {
+  return shell.parentThreadId == null;
+}
+
 export function scopeProject(
   environmentId: EnvironmentId,
   project: OrchestrationProjectShell,

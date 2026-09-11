@@ -110,6 +110,11 @@ export interface ProjectionThreadMessageRepositoryShape {
     input: ListProjectionThreadMessagesInput,
   ) => Effect.Effect<ProjectionThreadMessage["createdAt"] | null, ProjectionRepositoryError>;
 
+  /** Count a thread's user messages without loading message bodies. */
+  readonly countUserMessagesByThreadId: (
+    input: ListProjectionThreadMessagesInput,
+  ) => Effect.Effect<number, ProjectionRepositoryError>;
+
   /**
    * Delete projected thread messages by thread.
    */

@@ -429,6 +429,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           pinOrderKey: "gm",
           activeOrderKey: "hq",
           titleRegeneration: null,
+          parentThreadId: null,
+          anchorTurnId: null,
           deletedAt: null,
           messages: [
             {
@@ -554,6 +556,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           pinOrderKey: "gm",
           activeOrderKey: "hq",
           titleRegeneration: null,
+          parentThreadId: null,
+          anchorTurnId: null,
           session: {
             threadId: ThreadId.make("thread-1"),
             status: "running",
@@ -564,6 +568,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             updatedAt: "2026-02-24T00:00:07.000Z",
           },
           latestUserMessageAt: "2026-02-24T00:00:04.000Z",
+          interactionCount: null,
           hasPendingApprovals: true,
           hasPendingUserInput: false,
           hasActionableProposedPlan: false,

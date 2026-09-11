@@ -5,6 +5,7 @@ import type {
   OrchestrationThread,
   ProjectId,
   ThreadId,
+  TurnId,
 } from "@t3tools/contracts";
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
 import * as Effect from "effect/Effect";
@@ -18,7 +19,7 @@ function invariantError(commandType: string, detail: string): OrchestrationComma
   });
 }
 
-function findThreadById(
+export function findThreadById(
   readModel: OrchestrationReadModel,
   threadId: ThreadId,
 ): OrchestrationThread | undefined {
@@ -168,5 +169,93 @@ export function requireThreadAbsent(input: {
       input.command.type,
       `Thread '${input.threadId}' already exists and cannot be created twice.`,
     ),
+  );
+}
+
+export function listActiveReplyThreads(
+  readModel: OrchestrationReadModel,
+  parentThreadId: ThreadId,
+): ReadonlyArray<OrchestrationThread> {
+  return readModel.threads.filter(
+    (thread) => thread.parentThreadId === parentThreadId && thread.deletedAt === null,
+  );
+}
+
+/**
+ * Validates the reply-thread half of thread.create: the parent must be a live
+ * top-level thread in the same project, the anchor turn must have completed,
+ * and the anchor must be free (one reply thread per anchor turn).
+ */
+export function requireReplyThreadCreatable(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly command: OrchestrationCommand;
+  readonly projectId: ProjectId;
+  readonly parentThreadId: ThreadId;
+  readonly anchorTurnId: TurnId;
+}): Effect.Effect<OrchestrationThread, OrchestrationCommandInvariantError> {
+  return requireThread({
+    readModel: input.readModel,
+    command: input.command,
+    threadId: input.parentThreadId,
+  }).pipe(
+    Effect.flatMap((parent) => {
+      if (parent.deletedAt !== null) {
+        return Effect.fail(
+          invariantError(
+            input.command.type,
+            `Parent thread '${input.parentThreadId}' is deleted and cannot anchor a reply thread.`,
+          ),
+        );
+      }
+      if (parent.parentThreadId != null) {
+        return Effect.fail(
+          invariantError(
+            input.command.type,
+            `Thread '${input.parentThreadId}' is a reply thread and cannot have reply threads of its own.`,
+          ),
+        );
+      }
+      if (parent.projectId !== input.projectId) {
+        return Effect.fail(
+          invariantError(
+            input.command.type,
+            `Reply thread project '${input.projectId}' must match parent thread project '${parent.projectId}'.`,
+          ),
+        );
+      }
+      // The anchor must be a turn the read model knows about and must not be
+      // the still running latest turn. Older turns are complete by
+      // construction (turns are sequential), and checkpoints alone cannot be
+      // the evidence: projects without git never record checkpoint summaries.
+      const anchorKnown =
+        parent.checkpoints.some((checkpoint) => checkpoint.turnId === input.anchorTurnId) ||
+        parent.latestTurn?.turnId === input.anchorTurnId ||
+        parent.messages.some((message) => message.turnId === input.anchorTurnId);
+      const anchorIsUnfinishedLatestTurn =
+        parent.latestTurn?.turnId === input.anchorTurnId && parent.latestTurn.completedAt === null;
+      if (!anchorKnown || anchorIsUnfinishedLatestTurn) {
+        return Effect.fail(
+          invariantError(
+            input.command.type,
+            `Anchor turn '${input.anchorTurnId}' is not a completed turn of thread '${input.parentThreadId}'.`,
+          ),
+        );
+      }
+      const anchorTaken = input.readModel.threads.some(
+        (thread) =>
+          thread.parentThreadId === input.parentThreadId &&
+          thread.anchorTurnId === input.anchorTurnId &&
+          thread.deletedAt === null,
+      );
+      if (anchorTaken) {
+        return Effect.fail(
+          invariantError(
+            input.command.type,
+            `Anchor turn '${input.anchorTurnId}' already has a reply thread.`,
+          ),
+        );
+      }
+      return Effect.succeed(parent);
+    }),
   );
 }

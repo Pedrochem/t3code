@@ -1247,9 +1247,21 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
 
   return {
     provider: PROVIDER,
-    capabilities: { sessionModelSwitch: "in-session", supportsConversationRollback: false },
+    capabilities: {
+      sessionModelSwitch: "in-session",
+      supportsConversationRollback: false,
+      sessionFork: "unsupported",
+    },
     compaction: { type: "slash-command", command: "/compact" },
     startSession,
+    forkSession: () =>
+      Effect.fail(
+        new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "forkSession",
+          issue: "Session forking is not supported by this provider yet.",
+        }),
+      ),
     sendTurn,
     interruptTurn,
     respondToRequest,
