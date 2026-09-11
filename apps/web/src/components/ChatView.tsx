@@ -8913,14 +8913,14 @@ export default function ChatView(props: ChatViewProps) {
                               />
                             </div>
                           )}
-                          {mountComposerContextStrip &&
-                          composerContextStripCollapsed &&
-                          contextStripHeight > 0 ? (
-                            <div aria-hidden style={{ height: contextStripHeight }} />
-                          ) : null}
                         </div>
                       </div>
                     </ComposerSurface.Shell>
+                    {mountComposerContextStrip &&
+                    composerContextStripCollapsed &&
+                    contextStripHeight > 0 ? (
+                      <div aria-hidden style={{ height: contextStripHeight }} />
+                    ) : null}
                     <div
                       aria-hidden
                       className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
