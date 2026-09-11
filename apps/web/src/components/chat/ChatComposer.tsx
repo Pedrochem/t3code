@@ -3864,11 +3864,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     providerInputSubmissionError !== null ||
     hasImageAttachmentAttention;
   // The resting row is the only layout on existing threads: focus, typing,
-  // and reaching the timeline end never expand it. Chrome that needs the
-  // full surface (menus, approvals, errors, drags) still does.
+  // menus, drags, errors, and reaching the timeline end never expand it.
+  // Only a new draft keeps the full surface.
   const isComposerResting =
     !isMobileViewport &&
-    !composerHasExpandedChrome &&
     (variant === "reply" || (routeKind === "server" && activeThreadId !== null));
   const expandedComposerImages = isComposerResting
     ? standaloneComposerImages.filter((image) => pendingSnapShotIdSet.has(image.id))
