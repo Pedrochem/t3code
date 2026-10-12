@@ -914,6 +914,27 @@ describe("rightPanelStore", () => {
     expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("device");
   });
 
+  it("openReplyThread swaps the singleton surface in place", () => {
+    useRightPanelStore.getState().open(refA, "diff");
+    useRightPanelStore.getState().openReplyThread(refA, { anchorRunId: "run-1", threadId: null });
+
+    let state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.activeSurfaceId).toBe("reply-thread");
+    expect(state.surfaces).toEqual([
+      { id: "diff", kind: "diff" },
+      { id: "reply-thread", kind: "reply-thread", anchorRunId: "run-1", threadId: null },
+    ]);
+
+    useRightPanelStore
+      .getState()
+      .openReplyThread(refA, { anchorRunId: "run-2", threadId: "thread-child" });
+    state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces.filter((surface) => surface.kind === "reply-thread")).toEqual([
+      { id: "reply-thread", kind: "reply-thread", anchorRunId: "run-2", threadId: "thread-child" },
+    ]);
+    expect(state.activeSurfaceId).toBe("reply-thread");
+  });
+
   it("removeThread clears persisted state", () => {
     useRightPanelStore.getState().open(refA, "device");
     useRightPanelStore.getState().removeThread(refA);

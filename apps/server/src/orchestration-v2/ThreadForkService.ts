@@ -7,8 +7,10 @@ import {
   OrchestrationV2CreationSource,
   OrchestrationV2ProviderThread,
   OrchestrationV2Run,
+  OrchestrationV2ThreadForkPresentation,
   OrchestrationV2ThreadProjection,
   ThreadId,
+  isReplyThreadLineage,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -62,6 +64,7 @@ export interface ThreadForkServiceV2Shape {
     readonly transferId: ContextTransferId;
     readonly targetThreadId: ThreadId;
     readonly title?: string;
+    readonly presentation?: OrchestrationV2ThreadForkPresentation;
     readonly createdBy: OrchestrationV2Actor;
     readonly creationSource: OrchestrationV2CreationSource;
     readonly createdAt: DateTime.Utc;
@@ -85,6 +88,16 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
             cause: forkableSourceRunStatusError(input.sourceRun),
           });
         }
+        if (
+          input.presentation === "reply" &&
+          isReplyThreadLineage(input.sourceProjection.thread.lineage)
+        ) {
+          return yield* new ThreadForkPlanError({
+            sourceThreadId: input.sourceProjection.thread.id,
+            targetThreadId: input.targetThreadId,
+            cause: "Reply threads cannot have reply threads of their own.",
+          });
+        }
         const targetThread: OrchestrationV2AppThread = {
           ...input.sourceProjection.thread,
           createdBy: input.createdBy,
@@ -96,6 +109,7 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
             parentThreadId: input.sourceProjection.thread.id,
             relationshipToParent: "fork",
             rootThreadId: input.sourceProjection.thread.lineage.rootThreadId,
+            ...(input.presentation === undefined ? {} : { presentation: input.presentation }),
           },
           forkedFrom: {
             type: "run",

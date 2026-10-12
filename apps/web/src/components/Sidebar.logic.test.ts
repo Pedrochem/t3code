@@ -447,6 +447,24 @@ describe("sidebar thread lineage helpers", () => {
     ).toEqual([parentId, fork.id]);
   });
 
+  it("hides reply threads but keeps ordinary forks", () => {
+    const parentId = ThreadId.make("thread-parent");
+    const forkLineage = {
+      rootThreadId: parentId,
+      parentThreadId: parentId,
+      relationshipToParent: "fork" as const,
+    };
+    const fork = makeThreadFixture({ id: ThreadId.make("thread-fork"), lineage: forkLineage });
+    const reply = makeThreadFixture({
+      id: ThreadId.make("thread-reply"),
+      lineage: { ...forkLineage, presentation: "reply" },
+    });
+
+    expect(filterSidebarV2VisibleThreads([fork, reply], null).map((thread) => thread.id)).toEqual([
+      fork.id,
+    ]);
+  });
+
   it("identifies subagent threads so the sidebar can hide them", () => {
     const parentId = ThreadId.make("thread-parent");
     const subagent = makeThreadFixture({

@@ -1523,6 +1523,8 @@ export interface ChatComposerProps {
   routeKind: "server" | "draft";
   routeThreadRef: ScopedThreadRef;
   draftId: DraftId | null;
+  /** "reply" hides the controls a reply thread locks to its parent: model, modes, and traits. */
+  variant?: "thread" | "reply";
   multipleModelSelections: ReadonlyArray<ModelSelection> | null;
   supportsMultipleModels: boolean;
   onMultipleModelSelectionsChange: React.Dispatch<
@@ -1719,6 +1721,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     routeKind,
     routeThreadRef,
     draftId,
+    variant = "thread",
     multipleModelSelections,
     supportsMultipleModels,
     onMultipleModelSelectionsChange: setMultipleModelSelections,
@@ -5519,7 +5522,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       <CircleAlertIcon className="size-4" />
       {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
     </ComposerControl>
-  ) : (
+  ) : variant === "reply" ? null : (
     <>
       {composerControlsCollapsed &&
       restingControlsHost !== null &&
@@ -7545,7 +7548,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                 ? "Enable a provider in Settings to send a message"
                                 : phase === "disconnected"
                                   ? DISCONNECTED_COMPOSER_PLACEHOLDER
-                                  : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                                  : variant === "reply"
+                                    ? "Reply…"
+                                    : "Ask anything, @tag files/folders, $use skills, or / for commands"
                     }
                     disabled={
                       isConnecting ||

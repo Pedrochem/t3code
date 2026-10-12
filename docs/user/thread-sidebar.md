@@ -225,6 +225,20 @@ Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.
 
+## Reply in a side thread
+
+On web and desktop, hover over an agent response and choose **Reply in thread**
+to ask a side question without adding it to the main conversation. The reply
+thread opens in the right panel and continues from the conversation up to that
+response. Nothing you discuss there enters the main thread's context.
+
+Each response has one reply thread. Once it has a reply, a **Replies** chip under
+the response reopens it. Reply threads stay out of the sidebar and the command
+palette.
+
+A reply thread works in the same folder and branch as the main thread, so file
+changes it makes are real changes the main thread will see.
+
 ## Snooze until later
 
 Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your

@@ -41,6 +41,7 @@ import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-mes
 import { Link } from "@tanstack/react-router";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
 import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-execution";
+import type { ReplyThreadAnchor } from "@t3tools/client-runtime/state/threads";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import {
   liveThoughtLine,
@@ -151,6 +152,7 @@ import {
   XIcon,
   ZapIcon,
   RotateCcwIcon,
+  MessagesSquareIcon,
 } from "lucide-react";
 import { ChevronDown, ChevronRight } from "lucide";
 import type {
@@ -278,6 +280,7 @@ import { type TimestampFormat } from "@t3tools/contracts/settings";
 import {
   formatChatTimestampTooltip,
   formatDayAwareTimestamp,
+  formatRelativeTimeLabel,
   formatUpcomingTimestamp,
 } from "../../timestampFormat";
 import { FetchedToolOutput, V2ItemInspector } from "./V2ItemInspector";
@@ -346,6 +349,7 @@ interface TimelineRowSharedState {
     readonly sourceThreadId: ThreadId;
     readonly runId: RunId;
   }) => Promise<void>;
+  replyThreads: TimelineReplyThreads | null;
   onRollbackCheckpoint: (input: {
     readonly checkpointId: string;
     readonly scopeId: string;
@@ -441,6 +445,13 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH = {
 // Props (public API)
 // ---------------------------------------------------------------------------
 
+export interface TimelineReplyThreads {
+  /** Only this thread's own runs anchor reply threads, not rows inherited from a fork source. */
+  readonly sourceThreadId: ThreadId;
+  readonly anchorsByRunId: ReadonlyMap<RunId, ReplyThreadAnchor>;
+  readonly onReply: (runId: RunId) => Promise<void>;
+}
+
 export interface MessagesTimelineHistoryControls {
   readonly hasMoreHistory: boolean;
   readonly loading: boolean;
@@ -493,6 +504,8 @@ interface MessagesTimelineProps {
     readonly sourceThreadId: ThreadId;
     readonly runId: RunId;
   }) => Promise<void>;
+  /** Reply threads of the shown thread; absent where they cannot be opened. */
+  replyThreads?: TimelineReplyThreads | null;
   onRollbackCheckpoint: (input: {
     readonly checkpointId: string;
     readonly scopeId: string;
@@ -602,6 +615,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onOpenThread,
   parentThreadLink = null,
   onForkFromRun,
+  replyThreads = null,
   onRollbackCheckpoint,
   supportsConversationRollback,
   onRevertToTurnCount,
@@ -1374,6 +1388,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       onOpenTurnDiff,
       onOpenThread,
       onForkFromRun,
+      replyThreads,
       onRollbackCheckpoint,
       onToggleTurnFold,
       onToggleAttemptFold,
@@ -1412,6 +1427,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       onOpenTurnDiff,
       onOpenThread,
       onForkFromRun,
+      replyThreads,
       onRollbackCheckpoint,
       onToggleTurnFold,
       onToggleAttemptFold,
@@ -2867,6 +2883,9 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             copyStreaming={row.assistantCopyStreaming}
           />
         ) : null}
+        {row.showAssistantMeta && row.projectedItem?.item.type === "assistant_message" ? (
+          <ReplyThreadChip projectedItem={row.projectedItem} />
+        ) : null}
       </div>
     </>
   );
@@ -2891,30 +2910,85 @@ function AssistantForkButton({
 
   if (!canFork || projectedItem.item.runId === null) return null;
   const runId = projectedItem.item.runId;
+  const replyThreads =
+    ctx.replyThreads?.sourceThreadId === projectedItem.sourceThreadId ? ctx.replyThreads : null;
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              void ctx
-                .onForkFromRun({ sourceThreadId: projectedItem.sourceThreadId, runId })
-                .finally(() => setBusy(false));
-            }}
-            aria-label="Fork from this response"
-          />
-        }
-      >
-        <GitForkIcon className={cn("size-3", busy && "animate-pulse")} />
-      </TooltipTrigger>
-      <TooltipPopup side="top">Fork from this response</TooltipPopup>
-    </Tooltip>
+    <>
+      {replyThreads ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true);
+                  void replyThreads.onReply(runId).finally(() => setBusy(false));
+                }}
+                aria-label="Reply in thread"
+              />
+            }
+          >
+            <MessagesSquareIcon className={cn("size-3", busy && "animate-pulse")} />
+          </TooltipTrigger>
+          <TooltipPopup side="top">Reply in thread</TooltipPopup>
+        </Tooltip>
+      ) : null}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void ctx
+                  .onForkFromRun({ sourceThreadId: projectedItem.sourceThreadId, runId })
+                  .finally(() => setBusy(false));
+              }}
+              aria-label="Fork from this response"
+            />
+          }
+        >
+          <GitForkIcon className={cn("size-3", busy && "animate-pulse")} />
+        </TooltipTrigger>
+        <TooltipPopup side="top">Fork from this response</TooltipPopup>
+      </Tooltip>
+    </>
+  );
+}
+
+/** Stays visible under the anchor response once its reply thread has a reply. */
+function ReplyThreadChip({
+  projectedItem,
+}: {
+  readonly projectedItem: NonNullable<Extract<TimelineRow, { kind: "message" }>["projectedItem"]>;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const runId = projectedItem.item.runId;
+  const replyThreads =
+    ctx.replyThreads?.sourceThreadId === projectedItem.sourceThreadId ? ctx.replyThreads : null;
+  const anchor = runId === null ? undefined : replyThreads?.anchorsByRunId.get(runId);
+  if (!replyThreads || runId === null || anchor?.latestReplyAt == null) return null;
+  return (
+    <Button
+      type="button"
+      size="xs"
+      variant="ghost-muted"
+      className="mt-1.5"
+      onClick={() => void replyThreads.onReply(runId)}
+    >
+      <MessagesSquareIcon className="size-3" />
+      Replies
+      <span className="text-muted-foreground/70">
+        · {formatRelativeTimeLabel(anchor.latestReplyAt)}
+      </span>
+    </Button>
   );
 }
 

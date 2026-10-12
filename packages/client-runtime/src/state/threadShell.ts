@@ -3,11 +3,12 @@ import type {
   OrchestrationV2ShellSnapshot,
   OrchestrationV2ThreadShell,
   ProjectId,
+  RunId,
   ScopedProjectRef,
   ScopedThreadRef,
   ThreadId,
 } from "@t3tools/contracts";
-import { isProviderNativeSubagentThread } from "@t3tools/contracts";
+import { isProviderNativeSubagentThread, isReplyThreadLineage } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 
 import type { EnvironmentThreadShell } from "./models.ts";
@@ -29,6 +30,16 @@ const EMPTY_THREAD_REFS_BY_PROJECT: ReadonlyMap<
   ProjectId,
   ReadonlyArray<ScopedThreadRef>
 > = new Map();
+
+/** A parent run's reply thread, as the anchor chip reads it. */
+export interface ReplyThreadAnchor {
+  readonly threadId: ThreadId;
+  readonly anchorRunId: RunId;
+  /** Null until the first reply is sent. */
+  readonly latestReplyAt: string | null;
+}
+
+const EMPTY_REPLY_THREAD_ANCHORS: ReadonlyArray<ReplyThreadAnchor> = Object.freeze([]);
 
 export function createEnvironmentThreadShellAtoms(input: {
   readonly catalogValueAtom: Atom.Atom<EnvironmentCatalogState>;
@@ -183,6 +194,42 @@ export function createEnvironmentThreadShellAtoms(input: {
     }).pipe(Atom.withLabel(`environment-child-thread-inputs:${key}`));
   });
 
+  const replyThreadsAtomFamily = Atom.family((key: string) => {
+    const ref = parseThreadKey(key);
+    let previous = EMPTY_REPLY_THREAD_ANCHORS;
+    return Atom.make((get) => {
+      const next: ReplyThreadAnchor[] = [];
+      for (const thread of get(environmentThreadsAtom(ref.environmentId))) {
+        if (
+          thread.archivedAt !== null ||
+          !isReplyThreadLineage(thread.lineage) ||
+          thread.forkedFrom?.type !== "run" ||
+          thread.forkedFrom.threadId !== ref.threadId
+        ) {
+          continue;
+        }
+        next.push({
+          threadId: thread.id,
+          anchorRunId: thread.forkedFrom.runId,
+          latestReplyAt: scopedThread(ref.environmentId, thread).latestUserMessageAt,
+        });
+      }
+      if (
+        previous.length === next.length &&
+        previous.every(
+          (anchor, index) =>
+            anchor.threadId === next[index]?.threadId &&
+            anchor.anchorRunId === next[index]?.anchorRunId &&
+            anchor.latestReplyAt === next[index]?.latestReplyAt,
+        )
+      ) {
+        return previous;
+      }
+      previous = next.length === 0 ? EMPTY_REPLY_THREAD_ANCHORS : next;
+      return previous;
+    }).pipe(Atom.withLabel(`environment-reply-threads:${key}`));
+  });
+
   const threadShellsForProjectRefsAtomFamily = Atom.family((key: string) => {
     const projectRefs = parseProjectRefCollectionKey(key);
     let previous: ReadonlyArray<EnvironmentThreadShell> = [];
@@ -249,7 +296,11 @@ export function createEnvironmentThreadShellAtoms(input: {
     const next: EnvironmentThreadShell[] = [];
     for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
       for (const thread of get(environmentThreadsAtom(environmentId))) {
-        if (thread.archivedAt !== null || thread.lineage.relationshipToParent === "subagent")
+        if (
+          thread.archivedAt !== null ||
+          thread.lineage.relationshipToParent === "subagent" ||
+          isReplyThreadLineage(thread.lineage)
+        )
           continue;
         next.push(scopedThread(environmentId, thread));
       }
@@ -271,5 +322,6 @@ export function createEnvironmentThreadShellAtoms(input: {
       threadShellsForProjectRefsAtomFamily(projectRefCollectionKey(refs)),
     threadShellAtom: (ref: ScopedThreadRef) => threadShellAtomFamily(threadKey(ref)),
     childThreadInputsAtom: (ref: ScopedThreadRef) => childThreadInputsAtomFamily(threadKey(ref)),
+    replyThreadsAtom: (ref: ScopedThreadRef) => replyThreadsAtomFamily(threadKey(ref)),
   };
 }

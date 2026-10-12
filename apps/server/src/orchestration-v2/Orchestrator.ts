@@ -3609,6 +3609,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         transferId,
         targetThreadId: command.targetThreadId,
         ...(command.title === undefined ? {} : { title: command.title }),
+        ...(command.presentation === undefined ? {} : { presentation: command.presentation }),
         createdBy: command.createdBy,
         creationSource: command.creationSource,
         createdAt: now,

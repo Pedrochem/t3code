@@ -105,12 +105,24 @@ export const OrchestrationV2ProviderRef = Schema.Struct({
 });
 export type OrchestrationV2ProviderRef = typeof OrchestrationV2ProviderRef.Type;
 
+/** A fork shown as a side conversation on its source run instead of a sidebar thread. */
+export const OrchestrationV2ThreadForkPresentation = Schema.Literal("reply");
+export type OrchestrationV2ThreadForkPresentation =
+  typeof OrchestrationV2ThreadForkPresentation.Type;
+
 export const OrchestrationV2AppThreadLineage = Schema.Struct({
   parentThreadId: Schema.NullOr(ThreadId),
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent"])),
   rootThreadId: ThreadId,
+  /** Optional so threads written before reply threads still decode. */
+  presentation: Schema.optional(OrchestrationV2ThreadForkPresentation),
 });
 export type OrchestrationV2AppThreadLineage = typeof OrchestrationV2AppThreadLineage.Type;
+
+/** Reply threads live in their anchor's panel, so thread lists leave them out. */
+export function isReplyThreadLineage(lineage: OrchestrationV2AppThreadLineage): boolean {
+  return lineage.relationshipToParent === "fork" && lineage.presentation === "reply";
+}
 
 export const OrchestrationV2ContextTransferType = Schema.Literals([
   "fork",
@@ -3087,6 +3099,7 @@ export const OrchestrationV2Command = Schema.Union([
     targetThreadId: ThreadId,
     sourcePoint: OrchestrationV2ThreadForkSourcePoint,
     title: Schema.optional(TrimmedNonEmptyString),
+    presentation: Schema.optional(OrchestrationV2ThreadForkPresentation),
     createdAt: Schema.optional(Schema.DateTimeUtc),
   }),
   Schema.Struct({

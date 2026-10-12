@@ -7,6 +7,7 @@ import type {
 import {
   EMPTY_THREAD_HISTORY_META,
   type EnvironmentThreadStatus,
+  type ReplyThreadAnchor,
   type ThreadHistoryMeta,
 } from "@t3tools/client-runtime/state/threads";
 import type { ScopedProjectRef, ScopedThreadRef, ServerConfig } from "@t3tools/contracts";
@@ -34,6 +35,9 @@ const EMPTY_THREAD_REFS_ATOM = Atom.make(EMPTY_THREAD_REFS).pipe(
 const EMPTY_THREAD_SHELLS_ATOM = Atom.make<ReadonlyArray<EnvironmentThreadShell>>(
   Object.freeze([]),
 ).pipe(Atom.withLabel("web-thread-shells:empty"));
+const EMPTY_REPLY_THREADS_ATOM = Atom.make<ReadonlyArray<ReplyThreadAnchor>>(
+  Object.freeze([]),
+).pipe(Atom.withLabel("web-reply-threads:empty"));
 const EMPTY_THREAD_SHELL_ATOM = Atom.make<EnvironmentThreadShell | null>(null).pipe(
   Atom.withLabel("web-thread-shell:empty"),
 );
@@ -120,6 +124,12 @@ export function useThreadShell(ref: ScopedThreadRef | null): EnvironmentThreadSh
 export function useChildThreadInputs(ref: ScopedThreadRef | null) {
   return useAtomValue(
     ref === null ? EMPTY_THREAD_SHELLS_ATOM : environmentThreadShells.childThreadInputsAtom(ref),
+  );
+}
+
+export function useReplyThreads(ref: ScopedThreadRef | null): ReadonlyArray<ReplyThreadAnchor> {
+  return useAtomValue(
+    ref === null ? EMPTY_REPLY_THREADS_ATOM : environmentThreadShells.replyThreadsAtom(ref),
   );
 }
 

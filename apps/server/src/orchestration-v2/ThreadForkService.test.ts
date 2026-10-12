@@ -11,6 +11,7 @@ import {
   ProviderThreadId,
   RunId,
   ThreadId,
+  isReplyThreadLineage,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -106,11 +107,25 @@ function makeSourceProjection(sourceRun: OrchestrationV2Run): OrchestrationV2Thr
   };
 }
 
-const planFork = (sourceRun: OrchestrationV2Run) =>
+const planFork = (
+  sourceRun: OrchestrationV2Run,
+  options: {
+    readonly presentation?: "reply";
+    readonly sourceLineage?: OrchestrationV2AppThread["lineage"];
+  } = {},
+) =>
   Effect.gen(function* () {
     const service = yield* ThreadForkService.ThreadForkServiceV2;
+    const sourceProjection = makeSourceProjection(sourceRun);
     return yield* service.plan({
-      sourceProjection: makeSourceProjection(sourceRun),
+      sourceProjection:
+        options.sourceLineage === undefined
+          ? sourceProjection
+          : {
+              ...sourceProjection,
+              thread: { ...sourceProjection.thread, lineage: options.sourceLineage },
+            },
+      ...(options.presentation === undefined ? {} : { presentation: options.presentation }),
       sourceRun,
       sourceProviderThread: undefined,
       canonicalSourcePoint: {
@@ -189,5 +204,34 @@ it.effect("rejects in-progress and rolled-back fork sources", () =>
       assert.equal(error.targetThreadId, targetThreadId);
       assert.equal(error.cause, ThreadForkService.forkableSourceRunStatusError(sourceRun));
     }
+  }),
+);
+
+it.effect("marks a reply fork so lists can leave it out", () =>
+  Effect.gen(function* () {
+    const result = yield* planFork(makeSourceRun("completed"), { presentation: "reply" });
+    assert.deepEqual(result.targetThread.lineage, {
+      parentThreadId: sourceThreadId,
+      relationshipToParent: "fork",
+      rootThreadId: sourceThreadId,
+      presentation: "reply",
+    });
+    assert.isTrue(isReplyThreadLineage(result.targetThread.lineage));
+  }),
+);
+
+it.effect("rejects a reply thread forked from another reply thread", () =>
+  Effect.gen(function* () {
+    const error = yield* planFork(makeSourceRun("completed"), {
+      presentation: "reply",
+      sourceLineage: {
+        parentThreadId: ThreadId.make("thread:reply-root"),
+        relationshipToParent: "fork",
+        rootThreadId: ThreadId.make("thread:reply-root"),
+        presentation: "reply",
+      },
+    }).pipe(Effect.flip);
+    assert.equal(error._tag, "ThreadForkPlanError");
+    assert.equal(error.cause, "Reply threads cannot have reply threads of their own.");
   }),
 );

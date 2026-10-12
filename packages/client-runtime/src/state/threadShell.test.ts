@@ -1,6 +1,7 @@
 import {
   EnvironmentId,
   ProjectId,
+  RunId,
   ThreadId,
   type OrchestrationV2ShellSnapshot,
 } from "@t3tools/contracts";
@@ -100,6 +101,45 @@ describe("v2 thread shell lists", () => {
     expect(registry.get(threads.navigationThreadShellsAtom)).toBe(before);
     expect(registry.get(threads.threadShellsAtom)).toHaveLength(3);
     dispose();
+    registry.dispose();
+  });
+
+  it("lists reply threads under their anchor run and keeps them out of navigation", () => {
+    const { registry, threads, snapshotAtom } = makeHarness();
+    const root = v2ThreadShell;
+    const anchorRunId = RunId.make("run-anchor");
+    const reply = {
+      ...root,
+      id: ThreadId.make("reply"),
+      latestUserMessageAt: null,
+      lineage: {
+        ...root.lineage,
+        parentThreadId: root.id,
+        relationshipToParent: "fork" as const,
+        presentation: "reply" as const,
+      },
+      forkedFrom: { type: "run" as const, threadId: root.id, runId: anchorRunId },
+    };
+    const snapshot = { ...v2ShellSnapshot, threads: [root, reply] };
+    registry.set(snapshotAtom(environmentId), snapshot);
+    const rootRef = { environmentId, threadId: root.id };
+    const disposeNavigation = registry.mount(threads.navigationThreadShellsAtom);
+    const disposeReplies = registry.mount(threads.replyThreadsAtom(rootRef));
+
+    expect(registry.get(threads.navigationThreadShellsAtom).map((thread) => thread.id)).toEqual([
+      root.id,
+    ]);
+    const before = registry.get(threads.replyThreadsAtom(rootRef));
+    expect(before).toEqual([{ threadId: reply.id, anchorRunId, latestReplyAt: null }]);
+
+    registry.set(snapshotAtom(environmentId), {
+      ...snapshot,
+      threads: [{ ...root, title: "Renamed parent" }, reply],
+    });
+    expect(registry.get(threads.replyThreadsAtom(rootRef))).toBe(before);
+
+    disposeReplies();
+    disposeNavigation();
     registry.dispose();
   });
 
