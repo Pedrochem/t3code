@@ -707,6 +707,7 @@ function useDraftHeroLayoutTransition(
   } as const;
 }
 
+const COMPOSER_CONTEXT_STRIP_COLLAPSED_KEY = "t3code:composer-context-strip-collapsed:v1";
 const PreviewPanel = lazy(() =>
   import("./preview/PreviewPanel").then((module) => ({ default: module.PreviewPanel })),
 );
@@ -1918,6 +1919,39 @@ export default function ChatView(props: ChatViewProps) {
   const [restingComposerControlsHost, setRestingComposerControlsHost] =
     useState<HTMLDivElement | null>(null);
   const [restingComposerControlsVisible, setRestingComposerControlsVisible] = useState(false);
+  const [composerContextStripCollapsed, setComposerContextStripCollapsed] = useLocalStorage(
+    COMPOSER_CONTEXT_STRIP_COLLAPSED_KEY,
+    false,
+    Schema.Boolean,
+  );
+  const toggleComposerContextStrip = useCallback(() => {
+    setComposerContextStripCollapsed((collapsed) => !collapsed);
+  }, [setComposerContextStripCollapsed]);
+  // Last visible height of the controls strip. While the strip is hidden a
+  // spacer keeps that height below the composer, so hiding folds the strip
+  // away without the input row dropping to the bottom of the overlay.
+  const [contextStripHeight, setContextStripHeight] = useState(0);
+  const contextStripDisposeRef = useRef<(() => void) | null>(null);
+  const attachContextStripElement = useCallback((element: HTMLDivElement | null) => {
+    contextStripDisposeRef.current?.();
+    contextStripDisposeRef.current = null;
+    if (!element) return;
+    // The strip overlaps the composer host by its negative top margin, which
+    // collapses through this wrapper, so its own height overstates what it
+    // adds below the host. Measure from the host's bottom edge instead.
+    const measure = () => {
+      const host = element
+        .closest('[data-slot="composer-shell"]')
+        ?.querySelector<HTMLElement>('[data-slot="composer-host"]');
+      if (!host) return;
+      const height = Math.ceil(
+        element.getBoundingClientRect().bottom - host.getBoundingClientRect().bottom,
+      );
+      if (height > 0) setContextStripHeight(height);
+    };
+    measure();
+    contextStripDisposeRef.current = observeResize(element, measure);
+  }, []);
   const citeAssistantText = (
     citation: AssistantCitation,
     sourceAnchor: AssistantCitationSourceAnchor,
@@ -2036,7 +2070,6 @@ export default function ChatView(props: ChatViewProps) {
   const isTimelineAtLogicalEnd = () =>
     resolveTimelineIsAtEnd(legendListRef.current?.getState()) ?? isAtEndRef.current;
   const isTimelineAtLogicalEndStable = useStableCallback(isTimelineAtLogicalEnd);
-  const [timelineOverflows, setTimelineOverflows] = useState(false);
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const fanoutStateAtom = draftFanoutStateAtom(routeThreadKey);
@@ -4240,14 +4273,16 @@ export default function ChatView(props: ChatViewProps) {
     showEnvironmentIndicator: showComposerEnvironmentIndicator,
     hostsRestingComposerControls: routeKind === "server",
   });
-  const showComposerContextStrip = shouldShowComposerContextStrip({
-    isDraftHeroState,
-    persistInActiveThreads: settings.persistComposerContextStrip,
-    hasActiveProject: activeProject !== null && !showProviderSubagentBar,
-    isGitRepo,
-    showEnvironmentIndicator: showComposerEnvironmentIndicator,
-    hostsRestingComposerControls: routeKind === "server" && restingComposerControlsVisible,
-  });
+  const showComposerContextStrip =
+    !composerContextStripCollapsed &&
+    shouldShowComposerContextStrip({
+      isDraftHeroState,
+      persistInActiveThreads: settings.persistComposerContextStrip,
+      hasActiveProject: activeProject !== null && !showProviderSubagentBar,
+      isGitRepo,
+      showEnvironmentIndicator: showComposerEnvironmentIndicator,
+      hostsRestingComposerControls: routeKind === "server" && restingComposerControlsVisible,
+    });
   const mountComposerModelStrip =
     routeKind === "server" && !mountComposerContextStrip && !showProviderSubagentBar;
   const showComposerModelStrip = mountComposerModelStrip && restingComposerControlsVisible;
@@ -11051,7 +11086,6 @@ export default function ChatView(props: ChatViewProps) {
                 contentInsetEndAdjustment={composerTimelineInset}
                 liveFollowEnabled={!paintOnlyDisplayedTimeline && timelineLiveFollowEnabled}
                 onIsAtEndChange={onIsAtEndChangeStable}
-                onContentOverflowChange={setTimelineOverflows}
                 onToolOutputCollapsedAtEnd={onToolOutputCollapsedAtEndStable}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigationStable}
                 cancelPositionRestoreRef={cancelPositionRestoreRef}
@@ -11276,6 +11310,8 @@ export default function ChatView(props: ChatViewProps) {
                               }
                               threadPullRequests={(activeThreadShell ?? activeThread)?.pullRequests}
                               restingControlsHost={restingComposerControlsHost}
+                              contextStripCollapsed={composerContextStripCollapsed}
+                              onToggleContextStrip={toggleComposerContextStrip}
                               restingControlsHaveLeadingContext={
                                 mountComposerContextStrip &&
                                 (isGitRepo || showComposerEnvironmentIndicator)
@@ -11283,7 +11319,6 @@ export default function ChatView(props: ChatViewProps) {
                               onRestingControlsVisibilityChange={setRestingComposerControlsVisible}
                               getTimelineScrollableNode={getTimelineScrollableNodeStable}
                               isTimelineAtLogicalEnd={isTimelineAtLogicalEndStable}
-                              timelineOverflows={timelineOverflows}
                               onComposerOverlayHeightChange={publishComposerOverlayHeightStable}
                               onRestingChange={onComposerRestingChangeStable}
                               promptRef={promptRef}
@@ -11352,7 +11387,7 @@ export default function ChatView(props: ChatViewProps) {
                             </ComposerSurface.ContextStrip>
                           ) : null}
                           {mountComposerContextStrip && (
-                            <div className="pointer-events-auto">
+                            <div ref={attachContextStripElement} className="pointer-events-auto">
                               <BranchToolbar
                                 forceNewWorktree={multipleModelSelections !== null}
                                 ref={branchToolbarRef}
@@ -11397,6 +11432,11 @@ export default function ChatView(props: ChatViewProps) {
                         </div>
                       </div>
                     </ComposerSurface.Shell>
+                    {mountComposerContextStrip &&
+                    composerContextStripCollapsed &&
+                    contextStripHeight > 0 ? (
+                      <div aria-hidden style={{ height: contextStripHeight }} />
+                    ) : null}
                     <div
                       aria-hidden
                       className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"

@@ -209,7 +209,6 @@ import {
   shouldAnimateComposerRestingTransition,
   shouldUseCompactComposerPrimaryActions,
   shouldUseCompactComposerFooter,
-  shouldUseRestingComposerLayout,
 } from "../composerFooterLayout";
 import { measureRestingComposerControls } from "./restingComposerControlsMeasurement";
 import {
@@ -1065,6 +1064,8 @@ import {
   PaperclipIcon,
   PencilRulerIcon,
   PlayIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   ShieldIcon,
   XIcon,
 } from "lucide-react";
@@ -1585,8 +1586,11 @@ export interface ChatComposerProps {
   onRestingControlsVisibilityChange: (visible: boolean) => void;
   getTimelineScrollableNode: () => HTMLElement | null;
   isTimelineAtLogicalEnd: () => boolean;
-  timelineOverflows: boolean;
   onComposerOverlayHeightChange: (height: number) => void;
+  /** Whether the host hid the resting controls strip below the composer. */
+  contextStripCollapsed?: boolean;
+  /** Shows the strip toggle in the resting row; omitted where there is no strip. */
+  onToggleContextStrip?: () => void;
   onRestingChange: (resting: boolean) => void;
 
   promptRef: React.RefObject<string>;
@@ -1718,8 +1722,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onRestingControlsVisibilityChange,
     getTimelineScrollableNode,
     isTimelineAtLogicalEnd,
-    timelineOverflows,
     onComposerOverlayHeightChange,
+    contextStripCollapsed = false,
+    onToggleContextStrip,
     onRestingChange,
     promptRef,
     composerRef,
@@ -4832,14 +4837,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerSubmissionError !== null ||
     providerInputSubmissionError !== null ||
     hasImageAttachmentAttention;
-  const isComposerResting = shouldUseRestingComposerLayout({
-    isExistingThread: routeKind === "server" && activeThreadId !== null,
-    isMobileViewport,
-    isScrollCollapsed: isComposerScrollCollapsed,
-    hasExpandedChrome: composerHasExpandedChrome,
-    hasMultilinePrompt,
-    timelineOverflows,
-  });
+  // The resting row is the only layout on existing threads: focus, typing,
+  // menus, drags, errors, and reaching the timeline end never expand it.
+  // Only a new draft keeps the full surface.
+  const isComposerResting = !isMobileViewport && routeKind === "server" && activeThreadId !== null;
+  const showContextStripToggle = isComposerResting && onToggleContextStrip !== undefined;
   const expandedComposerImages = isComposerResting
     ? standaloneComposerImages.filter((image) => pendingSnapShotIdSet.has(image.id))
     : standaloneComposerImages;
@@ -7124,8 +7126,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     containerClassName={cn(isComposerResting && "min-w-0 flex-1")}
                     className={cn(
                       showMobilePendingAnswerActions && "max-sm:pb-12",
-                      isComposerResting &&
-                        "my-0 max-h-8 min-h-8 overflow-hidden py-0 whitespace-pre! leading-8",
+                      isComposerResting && "min-h-8 py-1 leading-6",
                       isComposerApprovalState && "min-h-10",
                     )}
                     placeholderClassName={cn(
@@ -7241,6 +7242,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
+                  {showContextStripToggle ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            onPointerDown={(event) => event.preventDefault()}
+                            onClick={onToggleContextStrip}
+                            aria-label={contextStripCollapsed ? "Show controls" : "Hide controls"}
+                            aria-expanded={!contextStripCollapsed}
+                          />
+                        }
+                      >
+                        {contextStripCollapsed ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                      </TooltipTrigger>
+                      <TooltipPopup>
+                        {contextStripCollapsed ? "Show controls" : "Hide controls"}
+                      </TooltipPopup>
+                    </Tooltip>
+                  ) : null}
                   {showComposerAttachAction ? (
                     <>
                       <input
